@@ -12,12 +12,10 @@ import (
 
 const (
 	BatchStart = "tickqueBatchStart"
-	BatchEnd   = "tickqueBatchEnd"
 )
 
 var (
 	batchStartJob = Job{Type: BatchStart}
-	batchEndJob   = Job{Type: BatchEnd}
 )
 
 type Job struct {
@@ -25,26 +23,12 @@ type Job struct {
 	Data []byte
 }
 
-func (_ Job) JobUUID() uint64 {
-	return 0
-}
-
-func (j Job) JobType() string {
-	return j.Type
-}
-
-func (j Job) JobData() []byte {
-	return j.Data
-}
-
 type Tickque struct {
 	slog.Logger
-	name                    string
-	jobHandler              func(job Job) int64
-	maxJobsPerBatch         int64
-	maxEnergyPointsPerBatch int64
-	batchStart              bool
-	batchEnd                bool
+	name            string
+	jobHandler      func(job Job) bool
+	maxJobsPerBatch int64
+	batchStartNtf   bool
 
 	mu sync.Mutex
 	dq deque.Deque
@@ -52,14 +36,13 @@ type Tickque struct {
 	numProcessed int64
 }
 
-func NewTickque(name string, jobHandler func(job Job) int64, maxJobsPerBatch int64, opts ...Option) (tq *Tickque) {
+func NewTickque(name string, jobHandler func(job Job) bool, maxJobsPerBatch int64, opts ...Option) (tq *Tickque) {
 	tq = &Tickque{
-		name:                    name,
-		Logger:                  slog.NewConsoleLogger(),
-		jobHandler:              jobHandler,
-		maxJobsPerBatch:         math.MaxInt64,
-		maxEnergyPointsPerBatch: math.MaxInt64,
-		dq:                      deque.NewDeque(),
+		name:            name,
+		Logger:          slog.NewConsoleLogger(),
+		jobHandler:      jobHandler,
+		maxJobsPerBatch: math.MaxInt64,
+		dq:              deque.NewDeque(),
 	}
 	if maxJobsPerBatch > 0 {
 		tq.maxJobsPerBatch = maxJobsPerBatch
@@ -70,46 +53,51 @@ func NewTickque(name string, jobHandler func(job Job) int64, maxJobsPerBatch int
 	return
 }
 
-func (this *Tickque) Process() {
+func (this *Tickque) Tick() (numProcessed int64) {
 	var pending []interface{}
-	var idx int
+	var pendingIdx int
 	defer func() {
 		if r := recover(); r != nil {
 			this.Errorf("<tickque.%s> panic: %+v\n%s", this.name, r, debug.Stack())
-			idx++
 		}
 
 		n := len(pending)
-		if idx < n {
+		if pendingIdx < n {
 			this.mu.Lock()
-			for i := n - 1; i >= idx; i-- {
+			for i := n - 1; i >= pendingIdx; i-- {
 				this.dq.PushFront(pending[i])
 			}
 			this.mu.Unlock()
 		}
-		if this.batchEnd {
-			this.jobHandler(batchEndJob)
-		}
+		atomic.AddInt64(&this.numProcessed, numProcessed)
 	}()
 
-	if this.batchStart {
+	if this.batchStartNtf {
 		this.jobHandler(batchStartJob)
 	}
 
-	const batchSize = 16
 	remainingJobs := this.maxJobsPerBatch
-	remainingEnergyPoints := this.maxEnergyPointsPerBatch
-	for remainingEnergyPoints > 0 && remainingJobs > 0 {
+	for remainingJobs > 0 {
+		const batchSize = 16
 		var n int64 = batchSize
 		if remainingJobs < batchSize {
 			n = remainingJobs
 		}
-		pending := this.dq.DequeueMany(int(n))
+		pending = this.dq.DequeueMany(int(n))
 		remainingJobs -= n
-		for idx = 0; idx < len(pending) && remainingEnergyPoints > 0; idx++ {
-			remainingEnergyPoints -= this.jobHandler(pending[idx].(Job))
+		for pendingIdx = 0; pendingIdx < len(pending); {
+			job := pending[pendingIdx].(Job)
+			pendingIdx++
+			numProcessed++
+			if !this.jobHandler(job) {
+				return
+			}
+		}
+		if len(pending) < int(n) {
+			return
 		}
 	}
+	return
 }
 
 func (this *Tickque) Enqueue(jobType string, jobData []byte) {
@@ -125,8 +113,8 @@ func (this *Tickque) NumPendingJobs() int {
 	return n
 }
 
-func (this *Tickque) NumProcessed() int {
-	return int(atomic.LoadInt64(&this.numProcessed))
+func (this *Tickque) NumProcessed() int64 {
+	return atomic.LoadInt64(&this.numProcessed)
 }
 
 type Option func(tq *Tickque)
@@ -139,20 +127,6 @@ func WithLogger(log slog.Logger) Option {
 
 func WithBatchStartNtf() Option {
 	return func(tq *Tickque) {
-		tq.batchStart = true
-	}
-}
-
-func WithBatchEndNtf() Option {
-	return func(tq *Tickque) {
-		tq.batchEnd = true
-	}
-}
-
-func WithMaxEnergyPointsPerBatch(n int64) Option {
-	return func(tq *Tickque) {
-		if n > 0 {
-			tq.maxEnergyPointsPerBatch = n
-		}
+		tq.batchStartNtf = true
 	}
 }
