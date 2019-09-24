@@ -100,6 +100,21 @@ func (this *Tickque) Enqueue(jobType string, jobData []byte) {
 	this.mu.Unlock()
 }
 
+func (this *Tickque) DequeueMany(max int) []Job {
+	this.mu.Lock()
+	a := this.dq.DequeueMany(max)
+	this.mu.Unlock()
+	n := len(a)
+	if n == 0 {
+		return nil
+	}
+	b := make([]Job, len(a), len(a))
+	for i := 0; i < n; i++ {
+		b[i] = a[i].(Job)
+	}
+	return b
+}
+
 func (this *Tickque) NumPendingJobs() int {
 	this.mu.Lock()
 	n := this.dq.Len()

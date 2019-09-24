@@ -169,3 +169,28 @@ func TestTickque_Halt(t *testing.T) {
 		t.Fatal("tq.NumProcessed() != 15")
 	}
 }
+
+func TestTickque_DequeueMany(t *testing.T) {
+	tq := NewTickque("alpha")
+	for i := 0; i < 20; i++ {
+		tq.Enqueue(fmt.Sprint(i), nil)
+	}
+	for i := 1; i < 7; i++ {
+		jobs := tq.DequeueMany(i)
+		switch i {
+		case 6:
+			if len(jobs) != 5 {
+				t.Fatal(len(jobs) != 5)
+			}
+		default:
+			if len(jobs) != i {
+				t.Fatalf("len(jobs) != i. i: %d", i)
+			}
+		}
+		for _, j := range jobs {
+			if j.Type == "" {
+				t.Fatal(`j.Type == ""`)
+			}
+		}
+	}
+}
