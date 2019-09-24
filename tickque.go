@@ -1,7 +1,6 @@
 package tickque
 
 import (
-	"math"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
@@ -23,11 +22,12 @@ type Job struct {
 	Data []byte
 }
 
+type JobHandler func(job Job) bool
+
 type Tickque struct {
 	slog.Logger
-	name            string
-	maxJobsPerBatch int64
-	batchStartNtf   bool
+	name          string
+	batchStartNtf bool
 
 	mu sync.Mutex
 	dq deque.Deque
@@ -35,15 +35,11 @@ type Tickque struct {
 	numProcessed int64
 }
 
-func NewTickque(name string, maxJobsPerBatch int64, opts ...Option) (tq *Tickque) {
+func NewTickque(name string, opts ...Option) (tq *Tickque) {
 	tq = &Tickque{
-		name:            name,
-		Logger:          slog.NewConsoleLogger(),
-		maxJobsPerBatch: math.MaxInt64,
-		dq:              deque.NewDeque(),
-	}
-	if maxJobsPerBatch > 0 {
-		tq.maxJobsPerBatch = maxJobsPerBatch
+		name:   name,
+		Logger: slog.NewConsoleLogger(),
+		dq:     deque.NewDeque(),
 	}
 	for _, opt := range opts {
 		opt(tq)
@@ -51,7 +47,7 @@ func NewTickque(name string, maxJobsPerBatch int64, opts ...Option) (tq *Tickque
 	return
 }
 
-func (this *Tickque) Tick(jobHandler func(job Job) bool) (numProcessed int64) {
+func (this *Tickque) Tick(maxNumJobs int64, jobHandler JobHandler) (numProcessed int64) {
 	var pending []interface{}
 	var pendingIdx int
 	defer func() {
@@ -74,7 +70,7 @@ func (this *Tickque) Tick(jobHandler func(job Job) bool) (numProcessed int64) {
 		jobHandler(batchStartJob)
 	}
 
-	remainingJobs := this.maxJobsPerBatch
+	remainingJobs := maxNumJobs
 	for remainingJobs > 0 {
 		const batchSize = 16
 		var n int64 = batchSize
