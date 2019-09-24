@@ -13,7 +13,7 @@ func TestTickque_Routine(t *testing.T) {
 		n++
 		return true
 	}
-	tq := NewTickque("alpha", handler, 10)
+	tq := NewTickque("alpha", 10)
 	for _, v := range []int{0, 3, 9, 10, 11, 19, 100} {
 		n = 0
 		for i := 0; i < v; i++ {
@@ -22,7 +22,7 @@ func TestTickque_Routine(t *testing.T) {
 		var c1 int
 		for tq.NumPendingJobs() > 0 {
 			c3 := tq.NumPendingJobs()
-			processed := tq.Tick()
+			processed := tq.Tick(handler)
 			if c2 := tq.NumPendingJobs(); v%10 == 0 || c3 >= 10 {
 				if processed != 10 {
 					t.Fatalf("processed != 10. v: %d, numPendingJobs: %d, processed: %d", v, c2, processed)
@@ -55,7 +55,7 @@ func TestWithBatchStartNtf(t *testing.T) {
 		}
 		return true
 	}
-	tq := NewTickque("alpha", handler, 10, WithBatchStartNtf())
+	tq := NewTickque("alpha", 10, WithBatchStartNtf())
 	for _, v := range []int{0, 3, 9, 10, 11, 19, 100} {
 		n = 0
 		for i := 0; i < v; i++ {
@@ -64,7 +64,7 @@ func TestWithBatchStartNtf(t *testing.T) {
 		var c1 int
 		for tq.NumPendingJobs() > 0 {
 			c3 := tq.NumPendingJobs()
-			processed := tq.Tick()
+			processed := tq.Tick(handler)
 			if c2 := tq.NumPendingJobs(); v%10 == 0 || c3 >= 10 {
 				if processed != 10 {
 					t.Fatalf("processed != 10. v: %d, numPendingJobs: %d, processed: %d", v, c2, processed)
@@ -95,12 +95,12 @@ func TestTickque_Panic(t *testing.T) {
 		return true
 	}
 	scav := slog.NewScavenger()
-	tq := NewTickque("alpha", handler, 10, WithLogger(scav))
+	tq := NewTickque("alpha", 10, WithLogger(scav))
 	for i := 0; i < 5; i++ {
 		tq.Enqueue(fmt.Sprint(i), nil)
 	}
 
-	if processed := tq.Tick(); processed != 2 {
+	if processed := tq.Tick(handler); processed != 2 {
 		t.Fatal("processed != 2")
 	}
 	if _, _, ok := scav.FindString("> panic:"); !ok {
@@ -114,7 +114,7 @@ func TestTickque_Panic(t *testing.T) {
 	}
 
 	numLogs := scav.Len()
-	if processed := tq.Tick(); processed != 3 {
+	if processed := tq.Tick(handler); processed != 3 {
 		t.Fatal("processed != 3")
 	}
 	if numLogs != scav.Len() {
@@ -134,12 +134,12 @@ func TestTickque_Halt(t *testing.T) {
 		n++
 		return n != 2
 	}
-	tq := NewTickque("alpha", handler, 10)
+	tq := NewTickque("alpha", 10)
 	for i := 0; i < 15; i++ {
 		tq.Enqueue(fmt.Sprint(i), nil)
 	}
 
-	if processed := tq.Tick(); processed != 2 {
+	if processed := tq.Tick(handler); processed != 2 {
 		t.Fatal("processed != 2")
 	}
 	if tq.NumPendingJobs() != 13 {
@@ -149,7 +149,7 @@ func TestTickque_Halt(t *testing.T) {
 		t.Fatal("tq.NumProcessed() != 2")
 	}
 
-	if processed := tq.Tick(); processed != 10 {
+	if processed := tq.Tick(handler); processed != 10 {
 		t.Fatal("processed != 10")
 	}
 	if tq.NumPendingJobs() != 3 {
@@ -159,7 +159,7 @@ func TestTickque_Halt(t *testing.T) {
 		t.Fatal("tq.NumProcessed() != 12")
 	}
 
-	if processed := tq.Tick(); processed != 3 {
+	if processed := tq.Tick(handler); processed != 3 {
 		t.Fatal("processed != 3")
 	}
 	if tq.NumPendingJobs() != 0 {

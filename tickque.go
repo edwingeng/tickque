@@ -26,7 +26,6 @@ type Job struct {
 type Tickque struct {
 	slog.Logger
 	name            string
-	jobHandler      func(job Job) bool
 	maxJobsPerBatch int64
 	batchStartNtf   bool
 
@@ -36,11 +35,10 @@ type Tickque struct {
 	numProcessed int64
 }
 
-func NewTickque(name string, jobHandler func(job Job) bool, maxJobsPerBatch int64, opts ...Option) (tq *Tickque) {
+func NewTickque(name string, maxJobsPerBatch int64, opts ...Option) (tq *Tickque) {
 	tq = &Tickque{
 		name:            name,
 		Logger:          slog.NewConsoleLogger(),
-		jobHandler:      jobHandler,
 		maxJobsPerBatch: math.MaxInt64,
 		dq:              deque.NewDeque(),
 	}
@@ -53,7 +51,7 @@ func NewTickque(name string, jobHandler func(job Job) bool, maxJobsPerBatch int6
 	return
 }
 
-func (this *Tickque) Tick() (numProcessed int64) {
+func (this *Tickque) Tick(jobHandler func(job Job) bool) (numProcessed int64) {
 	var pending []interface{}
 	var pendingIdx int
 	defer func() {
@@ -73,7 +71,7 @@ func (this *Tickque) Tick() (numProcessed int64) {
 	}()
 
 	if this.batchStartNtf {
-		this.jobHandler(batchStartJob)
+		jobHandler(batchStartJob)
 	}
 
 	remainingJobs := this.maxJobsPerBatch
@@ -89,7 +87,7 @@ func (this *Tickque) Tick() (numProcessed int64) {
 			job := pending[pendingIdx].(Job)
 			pendingIdx++
 			numProcessed++
-			if !this.jobHandler(job) {
+			if !jobHandler(job) {
 				return
 			}
 		}
