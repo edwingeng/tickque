@@ -3,6 +3,7 @@ package tickque
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/edwingeng/slog"
 )
@@ -192,5 +193,36 @@ func TestTickque_DequeueMany(t *testing.T) {
 				t.Fatal(`j.Type == ""`)
 			}
 		}
+	}
+}
+
+func TestWithBatchExecutionTimeThreshold(t *testing.T) {
+	var n int
+	handler := func(job Job) bool {
+		if n++; n == 1 {
+			time.Sleep(time.Millisecond * 30)
+		}
+		return true
+	}
+
+	scav := slog.NewScavenger()
+	tq := NewTickque("alpha", WithLogger(scav), WithBatchExecutionTimeThreshold(time.Millisecond*10))
+	tq.Enqueue("1", nil)
+	tq.Enqueue("2", nil)
+	tq.Enqueue("3", nil)
+
+	if processed := tq.Tick(1, handler); processed != 1 {
+		t.Fatal("processed != 1")
+	}
+	if _, _, ok := scav.FindString("the tick cost too much time"); !ok {
+		t.Fatal("WithBatchExecutionTimeThreshold does not work as expected")
+	}
+
+	scav.Reset()
+	if processed := tq.Tick(1, handler); processed != 1 {
+		t.Fatal("processed != 1")
+	}
+	if _, _, ok := scav.FindString("the tick cost too much time"); ok {
+		t.Fatal("WithBatchExecutionTimeThreshold does not work as expected")
 	}
 }

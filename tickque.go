@@ -4,6 +4,7 @@ import (
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/edwingeng/deque"
 	"github.com/edwingeng/slog"
@@ -26,8 +27,9 @@ type JobHandler func(job Job) bool
 
 type Tickque struct {
 	slog.Logger
-	name          string
-	batchStartNtf bool
+	name                        string
+	batchStartNtf               bool
+	batchExecutionTimeThreshold time.Duration
 
 	mu sync.Mutex
 	dq deque.Deque
@@ -37,9 +39,10 @@ type Tickque struct {
 
 func NewTickque(name string, opts ...Option) (tq *Tickque) {
 	tq = &Tickque{
-		name:   name,
-		Logger: slog.NewConsoleLogger(),
-		dq:     deque.NewDeque(),
+		name:                        name,
+		Logger:                      slog.NewConsoleLogger(),
+		batchExecutionTimeThreshold: time.Millisecond * 100,
+		dq:                          deque.NewDeque(),
 	}
 	for _, opt := range opts {
 		opt(tq)
@@ -48,6 +51,7 @@ func NewTickque(name string, opts ...Option) (tq *Tickque) {
 }
 
 func (this *Tickque) Tick(maxNumJobs int64, jobHandler JobHandler) (numProcessed int64) {
+	startTime := time.Now()
 	var pending []interface{}
 	var pendingIdx int
 	defer func() {
@@ -63,7 +67,11 @@ func (this *Tickque) Tick(maxNumJobs int64, jobHandler JobHandler) (numProcessed
 			}
 			this.mu.Unlock()
 		}
+
 		atomic.AddInt64(&this.numProcessed, numProcessed)
+		if d := time.Since(startTime); d > this.batchExecutionTimeThreshold {
+			this.Warnf("<tickque.%s> the tick cost too much time. d: %v", this.name, d)
+		}
 	}()
 
 	if this.batchStartNtf {
@@ -137,5 +145,11 @@ func WithLogger(log slog.Logger) Option {
 func WithBatchStartNtf() Option {
 	return func(tq *Tickque) {
 		tq.batchStartNtf = true
+	}
+}
+
+func WithBatchExecutionTimeThreshold(d time.Duration) Option {
+	return func(tq *Tickque) {
+		tq.batchExecutionTimeThreshold = d
 	}
 }
