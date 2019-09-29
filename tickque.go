@@ -15,15 +15,21 @@ const (
 )
 
 var (
-	batchStartJob = Job{Type: BatchStart}
+	batchStartJob = &Job{Type: BatchStart}
 )
 
 type Job struct {
 	Type string
 	Data []byte
+
+	tryNumber int
 }
 
-type JobHandler func(job Job) bool
+func (this *Job) TryNumber() int {
+	return this.tryNumber
+}
+
+type JobHandler func(job *Job) bool
 
 type Tickque struct {
 	slog.Logger
@@ -88,7 +94,7 @@ func (this *Tickque) Tick(maxNumJobs int64, jobHandler JobHandler) (numProcessed
 		pending = this.dq.DequeueMany(int(n))
 		remainingJobs -= n
 		for pendingIdx = 0; pendingIdx < len(pending); {
-			job := pending[pendingIdx].(Job)
+			job := pending[pendingIdx].(*Job)
 			pendingIdx++
 			numProcessed++
 			if !jobHandler(job) {
@@ -104,11 +110,18 @@ func (this *Tickque) Tick(maxNumJobs int64, jobHandler JobHandler) (numProcessed
 
 func (this *Tickque) Enqueue(jobType string, jobData []byte) {
 	this.mu.Lock()
-	this.dq.Enqueue(Job{Type: jobType, Data: jobData})
+	this.dq.Enqueue(&Job{Type: jobType, Data: jobData, tryNumber: 1})
 	this.mu.Unlock()
 }
 
-func (this *Tickque) DequeueMany(max int) []Job {
+func (this *Tickque) Retry(job *Job) {
+	job.tryNumber++
+	this.mu.Lock()
+	this.dq.Enqueue(job)
+	this.mu.Unlock()
+}
+
+func (this *Tickque) DequeueMany(max int) []*Job {
 	this.mu.Lock()
 	a := this.dq.DequeueMany(max)
 	this.mu.Unlock()
@@ -116,9 +129,9 @@ func (this *Tickque) DequeueMany(max int) []Job {
 	if n == 0 {
 		return nil
 	}
-	b := make([]Job, len(a), len(a))
+	b := make([]*Job, len(a), len(a))
 	for i := 0; i < n; i++ {
-		b[i] = a[i].(Job)
+		b[i] = a[i].(*Job)
 	}
 	return b
 }

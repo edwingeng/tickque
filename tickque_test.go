@@ -10,7 +10,7 @@ import (
 
 func TestTickque_Routine(t *testing.T) {
 	var n int
-	handler := func(job Job) bool {
+	handler := func(job *Job) bool {
 		n++
 		return true
 	}
@@ -43,7 +43,7 @@ func TestTickque_Routine(t *testing.T) {
 
 func TestWithBatchStartNtf(t *testing.T) {
 	var n int
-	handler := func(job Job) bool {
+	handler := func(job *Job) bool {
 		n++
 		if n%11 == 1 {
 			if job.Type != BatchStart {
@@ -85,7 +85,7 @@ func TestWithBatchStartNtf(t *testing.T) {
 
 func TestTickque_Panic(t *testing.T) {
 	var n int
-	handler := func(job Job) bool {
+	handler := func(job *Job) bool {
 		if job.Type != fmt.Sprint(n) {
 			t.Fatal("job.Type != fmt.Sprint(n)")
 		}
@@ -131,7 +131,7 @@ func TestTickque_Panic(t *testing.T) {
 
 func TestTickque_Halt(t *testing.T) {
 	var n int
-	handler := func(job Job) bool {
+	handler := func(job *Job) bool {
 		n++
 		return n != 2
 	}
@@ -198,7 +198,7 @@ func TestTickque_DequeueMany(t *testing.T) {
 
 func TestWithBatchExecutionTimeThreshold(t *testing.T) {
 	var n int
-	handler := func(job Job) bool {
+	handler := func(job *Job) bool {
 		if n++; n == 1 {
 			time.Sleep(time.Millisecond * 30)
 		}
@@ -224,5 +224,23 @@ func TestWithBatchExecutionTimeThreshold(t *testing.T) {
 	}
 	if _, _, ok := scav.FindString("the tick cost too much time"); ok {
 		t.Fatal("WithBatchExecutionTimeThreshold does not work as expected")
+	}
+}
+
+func TestTickque_Retry(t *testing.T) {
+	var n int
+	tq := NewTickque("alpha")
+	handler := func(job *Job) bool {
+		n++
+		if job.TryNumber() != n {
+			t.Fatal("job.TryNumber() != n")
+		}
+		tq.Retry(job)
+		return true
+	}
+
+	tq.Enqueue("1", nil)
+	for i := 0; i < 10; i++ {
+		tq.Tick(10, handler)
 	}
 }
