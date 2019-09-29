@@ -41,22 +41,22 @@ func TestTickque_Routine(t *testing.T) {
 	}
 }
 
-func TestWithBatchStartNtf(t *testing.T) {
+func TestWithTickStartNtf(t *testing.T) {
 	var n int
 	handler := func(job *Job) bool {
 		n++
 		if n%11 == 1 {
-			if job.Type != BatchStart {
-				t.Fatalf("job.Type != BatchStart. job.Type: %s", job.Type)
+			if job.Type != TickStart {
+				t.Fatalf("job.Type != TickStart. job.Type: %s", job.Type)
 			}
 		} else {
-			if job.Type == BatchStart {
-				t.Fatalf("job.Type == BatchStart. job.Type: %s", job.Type)
+			if job.Type == TickStart {
+				t.Fatalf("job.Type == TickStart. job.Type: %s", job.Type)
 			}
 		}
 		return true
 	}
-	tq := NewTickque("alpha", WithBatchStartNtf())
+	tq := NewTickque("alpha", WithTickStartNtf())
 	for _, v := range []int{0, 3, 9, 10, 11, 19, 100} {
 		n = 0
 		for i := 0; i < v; i++ {
@@ -196,7 +196,7 @@ func TestTickque_DequeueMany(t *testing.T) {
 	}
 }
 
-func TestWithBatchExecutionTimeThreshold(t *testing.T) {
+func TestWithTickExecutionTimeThreshold(t *testing.T) {
 	var n int
 	handler := func(job *Job) bool {
 		if n++; n == 1 {
@@ -206,7 +206,7 @@ func TestWithBatchExecutionTimeThreshold(t *testing.T) {
 	}
 
 	scav := slog.NewScavenger()
-	tq := NewTickque("alpha", WithLogger(scav), WithBatchExecutionTimeThreshold(time.Millisecond*10))
+	tq := NewTickque("alpha", WithLogger(scav), WithTickExecutionTimeThreshold(time.Millisecond*10))
 	tq.Enqueue("1", nil)
 	tq.Enqueue("2", nil)
 	tq.Enqueue("3", nil)
@@ -215,7 +215,7 @@ func TestWithBatchExecutionTimeThreshold(t *testing.T) {
 		t.Fatal("processed != 1")
 	}
 	if _, _, ok := scav.FindString("the tick cost too much time"); !ok {
-		t.Fatal("WithBatchExecutionTimeThreshold does not work as expected")
+		t.Fatal("WithTickExecutionTimeThreshold does not work as expected")
 	}
 
 	scav.Reset()
@@ -223,7 +223,7 @@ func TestWithBatchExecutionTimeThreshold(t *testing.T) {
 		t.Fatal("processed != 1")
 	}
 	if _, _, ok := scav.FindString("the tick cost too much time"); ok {
-		t.Fatal("WithBatchExecutionTimeThreshold does not work as expected")
+		t.Fatal("WithTickExecutionTimeThreshold does not work as expected")
 	}
 }
 

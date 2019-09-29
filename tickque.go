@@ -11,11 +11,11 @@ import (
 )
 
 const (
-	BatchStart = "tickqueBatchStart"
+	TickStart = "tickqueTickStart"
 )
 
 var (
-	batchStartJob = &Job{Type: BatchStart}
+	tickStartJob = &Job{Type: TickStart}
 )
 
 type Job struct {
@@ -33,9 +33,9 @@ type JobHandler func(job *Job) bool
 
 type Tickque struct {
 	slog.Logger
-	name                        string
-	batchStartNtf               bool
-	batchExecutionTimeThreshold time.Duration
+	name                       string
+	tickStartNtf               bool
+	tickExecutionTimeThreshold time.Duration
 
 	mu sync.Mutex
 	dq deque.Deque
@@ -45,10 +45,10 @@ type Tickque struct {
 
 func NewTickque(name string, opts ...Option) (tq *Tickque) {
 	tq = &Tickque{
-		name:                        name,
-		Logger:                      slog.NewConsoleLogger(),
-		batchExecutionTimeThreshold: time.Millisecond * 100,
-		dq:                          deque.NewDeque(),
+		name:                       name,
+		Logger:                     slog.NewConsoleLogger(),
+		tickExecutionTimeThreshold: time.Millisecond * 100,
+		dq:                         deque.NewDeque(),
 	}
 	for _, opt := range opts {
 		opt(tq)
@@ -75,13 +75,13 @@ func (this *Tickque) Tick(maxNumJobs int64, jobHandler JobHandler) (numProcessed
 		}
 
 		atomic.AddInt64(&this.numProcessed, numProcessed)
-		if d := time.Since(startTime); d > this.batchExecutionTimeThreshold {
+		if d := time.Since(startTime); d > this.tickExecutionTimeThreshold {
 			this.Warnf("<tickque.%s> the tick cost too much time. d: %v", this.name, d)
 		}
 	}()
 
-	if this.batchStartNtf {
-		jobHandler(batchStartJob)
+	if this.tickStartNtf {
+		jobHandler(tickStartJob)
 	}
 
 	remainingJobs := maxNumJobs
@@ -155,14 +155,14 @@ func WithLogger(log slog.Logger) Option {
 	}
 }
 
-func WithBatchStartNtf() Option {
+func WithTickStartNtf() Option {
 	return func(tq *Tickque) {
-		tq.batchStartNtf = true
+		tq.tickStartNtf = true
 	}
 }
 
-func WithBatchExecutionTimeThreshold(d time.Duration) Option {
+func WithTickExecutionTimeThreshold(d time.Duration) Option {
 	return func(tq *Tickque) {
-		tq.batchExecutionTimeThreshold = d
+		tq.tickExecutionTimeThreshold = d
 	}
 }
