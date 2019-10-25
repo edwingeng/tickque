@@ -91,7 +91,9 @@ func (this *Tickque) Tick(maxNumJobs int64, jobHandler JobHandler) (numProcessed
 		if remainingJobs < batchSize {
 			n = remainingJobs
 		}
+		this.mu.Lock()
 		pending = this.dq.DequeueMany(int(n))
+		this.mu.Unlock()
 		remainingJobs -= n
 		for pendingIdx = 0; pendingIdx < len(pending); {
 			job := pending[pendingIdx].(*Job)
