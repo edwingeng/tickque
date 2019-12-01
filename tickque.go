@@ -40,7 +40,7 @@ type Tickque struct {
 	mu sync.Mutex
 	dq deque.Deque
 
-	numProcessed int64
+	totalProcessed int64
 }
 
 func NewTickque(name string, opts ...Option) (tq *Tickque) {
@@ -56,7 +56,7 @@ func NewTickque(name string, opts ...Option) (tq *Tickque) {
 	return
 }
 
-func (this *Tickque) Tick(maxNumJobs int64, jobHandler JobHandler) (numProcessed int64) {
+func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) (numProcessed int) {
 	startTime := time.Now()
 	var pending []interface{}
 	var pendingIdx int
@@ -74,7 +74,7 @@ func (this *Tickque) Tick(maxNumJobs int64, jobHandler JobHandler) (numProcessed
 			this.mu.Unlock()
 		}
 
-		atomic.AddInt64(&this.numProcessed, numProcessed)
+		atomic.AddInt64(&this.totalProcessed, int64(numProcessed))
 		if d := time.Since(startTime); d > this.tickExecutionTimeThreshold {
 			this.Warnf("<tickque.%s> the tick cost too much time. d: %v", this.name, d)
 		}
@@ -87,15 +87,15 @@ func (this *Tickque) Tick(maxNumJobs int64, jobHandler JobHandler) (numProcessed
 	remainingJobs := maxNumJobs
 	for remainingJobs > 0 {
 		const batchSize = 16
-		var n int64 = batchSize
+		var n = batchSize
 		if remainingJobs < batchSize {
 			n = remainingJobs
 		}
 		this.mu.Lock()
-		pending = this.dq.DequeueMany(int(n))
+		pending = this.dq.DequeueMany(n)
 		this.mu.Unlock()
-		remainingJobs -= n
-		for pendingIdx = 0; pendingIdx < len(pending); {
+		n = len(pending)
+		for pendingIdx = 0; pendingIdx < n; {
 			job := pending[pendingIdx].(*Job)
 			pendingIdx++
 			numProcessed++
@@ -103,9 +103,10 @@ func (this *Tickque) Tick(maxNumJobs int64, jobHandler JobHandler) (numProcessed
 				return
 			}
 		}
-		if len(pending) < int(n) {
+		if n < batchSize {
 			return
 		}
+		remainingJobs -= n
 	}
 	return
 }
@@ -145,8 +146,8 @@ func (this *Tickque) NumPendingJobs() int {
 	return n
 }
 
-func (this *Tickque) NumProcessed() int64 {
-	return atomic.LoadInt64(&this.numProcessed)
+func (this *Tickque) TotalProcessed() int64 {
+	return atomic.LoadInt64(&this.totalProcessed)
 }
 
 type Option func(tq *Tickque)

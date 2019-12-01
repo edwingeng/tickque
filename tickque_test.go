@@ -29,7 +29,7 @@ func TestTickque_Routine(t *testing.T) {
 					t.Fatalf("processed != 10. v: %d, numPendingJobs: %d, processed: %d", v, c2, processed)
 				}
 			} else {
-				if processed != int64(v)%10 {
+				if processed != v%10 {
 					t.Fatalf("processed != int64(v) %% 10. v: %d, numPendingJobs: %d, processed: %d", v, c2, processed)
 				}
 			}
@@ -71,7 +71,7 @@ func TestWithTickStartNtf(t *testing.T) {
 					t.Fatalf("processed != 10. v: %d, numPendingJobs: %d, processed: %d", v, c2, processed)
 				}
 			} else {
-				if processed != int64(v)%10 {
+				if processed != v%10 {
 					t.Fatalf("processed != int64(v) %% 10. v: %d, numPendingJobs: %d, processed: %d", v, c2, processed)
 				}
 			}
@@ -110,8 +110,8 @@ func TestTickque_Panic(t *testing.T) {
 	if tq.NumPendingJobs() != 3 {
 		t.Fatal("tq.NumPendingJobs() != 3")
 	}
-	if tq.NumProcessed() != 2 {
-		t.Fatal("tq.NumProcessed() != 2")
+	if tq.TotalProcessed() != 2 {
+		t.Fatal("tq.TotalProcessed() != 2")
 	}
 
 	numLogs := scav.Len()
@@ -124,8 +124,8 @@ func TestTickque_Panic(t *testing.T) {
 	if tq.NumPendingJobs() != 0 {
 		t.Fatal("tq.NumPendingJobs() != 0")
 	}
-	if tq.NumProcessed() != 5 {
-		t.Fatal("tq.NumProcessed() != 5")
+	if tq.TotalProcessed() != 5 {
+		t.Fatal("tq.TotalProcessed() != 5")
 	}
 }
 
@@ -146,8 +146,8 @@ func TestTickque_Halt(t *testing.T) {
 	if tq.NumPendingJobs() != 13 {
 		t.Fatal("tq.NumPendingJobs() != 13")
 	}
-	if tq.NumProcessed() != 2 {
-		t.Fatal("tq.NumProcessed() != 2")
+	if tq.TotalProcessed() != 2 {
+		t.Fatal("tq.TotalProcessed() != 2")
 	}
 
 	if processed := tq.Tick(10, handler); processed != 10 {
@@ -156,8 +156,8 @@ func TestTickque_Halt(t *testing.T) {
 	if tq.NumPendingJobs() != 3 {
 		t.Fatal("tq.NumPendingJobs() != 3")
 	}
-	if tq.NumProcessed() != 12 {
-		t.Fatal("tq.NumProcessed() != 12")
+	if tq.TotalProcessed() != 12 {
+		t.Fatal("tq.TotalProcessed() != 12")
 	}
 
 	if processed := tq.Tick(10, handler); processed != 3 {
@@ -166,8 +166,8 @@ func TestTickque_Halt(t *testing.T) {
 	if tq.NumPendingJobs() != 0 {
 		t.Fatal("tq.NumPendingJobs() != 0")
 	}
-	if tq.NumProcessed() != 15 {
-		t.Fatal("tq.NumProcessed() != 15")
+	if tq.TotalProcessed() != 15 {
+		t.Fatal("tq.TotalProcessed() != 15")
 	}
 }
 
