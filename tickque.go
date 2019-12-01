@@ -6,12 +6,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/edwingeng/deque"
 	"github.com/edwingeng/slog"
 )
 
 const (
-	TickStart = "tickqueTickStart"
+	TickStart = "tickque:TickStart"
 )
 
 var (
@@ -38,7 +37,7 @@ type Tickque struct {
 	tickExecutionTimeThreshold time.Duration
 
 	mu sync.Mutex
-	dq deque.Deque
+	dq *Deque
 
 	totalProcessed int64
 }
@@ -48,7 +47,7 @@ func NewTickque(name string, opts ...Option) (tq *Tickque) {
 		name:                       name,
 		Logger:                     slog.NewConsoleLogger(),
 		tickExecutionTimeThreshold: time.Millisecond * 100,
-		dq:                         deque.NewDeque(),
+		dq:                         NewDeque(),
 	}
 	for _, opt := range opts {
 		opt(tq)
@@ -58,7 +57,7 @@ func NewTickque(name string, opts ...Option) (tq *Tickque) {
 
 func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) (numProcessed int) {
 	startTime := time.Now()
-	var pending []interface{}
+	var pending []*Job
 	var pendingIdx int
 	defer func() {
 		if r := recover(); r != nil {
@@ -96,7 +95,7 @@ func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) (numProcessed i
 		this.mu.Unlock()
 		n = len(pending)
 		for pendingIdx = 0; pendingIdx < n; {
-			job := pending[pendingIdx].(*Job)
+			job := pending[pendingIdx]
 			pendingIdx++
 			numProcessed++
 			if !jobHandler(job) {
@@ -128,15 +127,7 @@ func (this *Tickque) DequeueMany(max int) []*Job {
 	this.mu.Lock()
 	a := this.dq.DequeueMany(max)
 	this.mu.Unlock()
-	n := len(a)
-	if n == 0 {
-		return nil
-	}
-	b := make([]*Job, len(a), len(a))
-	for i := 0; i < n; i++ {
-		b[i] = a[i].(*Job)
-	}
-	return b
+	return a
 }
 
 func (this *Tickque) NumPendingJobs() int {
