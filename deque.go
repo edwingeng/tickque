@@ -1,6 +1,7 @@
 package tickque
 
 import (
+	"fmt"
 	"sync/atomic"
 )
 
@@ -304,19 +305,46 @@ func (dq *Deque) Dump() []Elem {
 	return vals
 }
 
-func (dq *Deque) Range(f func(v Elem) bool) {
+func (dq *Deque) Range(f func(i int, v Elem) bool) {
 	n := dq.Len()
 	if n == 0 {
 		return
 	}
 
+	var i int
 	for _, c := range dq.chunks {
-		for i := c.s; i < c.e; i++ {
-			if !f(c.data[i]) {
+		for j := c.s; j < c.e; j++ {
+			if !f(i, c.data[j]) {
 				return
 			}
+			i++
 		}
 	}
+}
+
+func (dq *Deque) Peek(idx int) Elem {
+	i := idx
+	for _, c := range dq.chunks {
+		n := c.e - c.s
+		if i < n {
+			return c.data[c.s+i]
+		}
+		i -= n
+	}
+	panic(fmt.Errorf("out of range: %d", idx))
+}
+
+func (dq *Deque) Replace(idx int, v Elem) {
+	i := idx
+	for _, c := range dq.chunks {
+		n := c.e - c.s
+		if i < n {
+			c.data[c.s+i] = v
+			return
+		}
+		i -= n
+	}
+	panic(fmt.Errorf("out of range: %d", idx))
 }
 
 // NumChunksAllocated returns the number of chunks allocated by now.
