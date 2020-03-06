@@ -14,7 +14,7 @@ const (
 )
 
 var (
-	tickStartJob = &Job{Type: TickStart}
+	jobTickStart = &Job{Type: TickStart}
 )
 
 type Job struct {
@@ -80,7 +80,7 @@ func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) (numProcessed i
 	}()
 
 	if this.tickStartNtf {
-		jobHandler(tickStartJob)
+		jobHandler(jobTickStart)
 	}
 
 	remainingJobs := maxNumJobs
