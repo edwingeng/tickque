@@ -55,6 +55,14 @@ func NewTickque(name string, opts ...Option) (tq *Tickque) {
 	return
 }
 
+func minInt(n1, n2 int) int {
+	if n1 < n2 {
+		return n1
+	} else {
+		return n2
+	}
+}
+
 func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) (numProcessed int) {
 	startTime := time.Now()
 	var pending []*Job
@@ -64,10 +72,9 @@ func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) (numProcessed i
 			this.Errorf("<tickque.%s> panic: %+v\n%s", this.name, r, debug.Stack())
 		}
 
-		n := len(pending)
-		if pendingIdx < n {
+		if pendingIdx < len(pending) {
 			this.mu.Lock()
-			for i := n - 1; i >= pendingIdx; i-- {
+			for i := len(pending) - 1; i >= pendingIdx; i-- {
 				this.dq.PushFront(pending[i])
 			}
 			this.mu.Unlock()
@@ -80,16 +87,18 @@ func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) (numProcessed i
 	}()
 
 	if this.tickStartNtf {
-		jobHandler(jobTickStart)
+		if !jobHandler(jobTickStart) {
+			return
+		}
 	}
 
-	remainingJobs := maxNumJobs
+	this.mu.Lock()
+	remainingJobs := minInt(this.dq.Len(), maxNumJobs)
+	this.mu.Unlock()
+
 	for remainingJobs > 0 {
 		const batchSize = 16
-		var n = batchSize
-		if remainingJobs < batchSize {
-			n = remainingJobs
-		}
+		n := minInt(remainingJobs, batchSize)
 		this.mu.Lock()
 		pending = this.dq.DequeueMany(n)
 		this.mu.Unlock()

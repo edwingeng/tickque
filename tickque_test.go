@@ -231,16 +231,59 @@ func TestTickque_Retry(t *testing.T) {
 	var n int
 	tq := NewTickque("alpha")
 	handler := func(job *Job) bool {
-		n++
-		if job.TryNumber() != n {
-			t.Fatal("job.TryNumber() != n")
+		switch job.Type {
+		case "0":
+			if n >= 0 {
+				n++
+				if job.TryNumber() != n {
+					t.Fatal("job.TryNumber() != n")
+				}
+			}
 		}
 		tq.Retry(job)
 		return true
 	}
 
-	tq.Enqueue("1", nil)
+	if tq.Tick(1, handler) != 0 {
+		t.Fatal("tq.Tick(1, handler) != 0")
+	}
+
+	tq.Enqueue("0", nil)
 	for i := 0; i < 10; i++ {
 		tq.Tick(10, handler)
+		if n != i+1 {
+			t.Fatal("n != i+1")
+		}
+	}
+
+	n = -1
+	for i := 1; i < 10; i++ {
+		tq.Enqueue(fmt.Sprint(i), nil)
+	}
+	for i := 0; i < 50; i++ {
+		if i <= 10 {
+			if tq.Tick(i, handler) != i {
+				t.Fatal("tq.Tick(i, handler) != i")
+			}
+		} else {
+			if tq.Tick(i, handler) != 10 {
+				t.Fatal("tq.Tick(i, handler) != 10")
+			}
+		}
+	}
+
+	for i := 0; i < 10; i++ {
+		tq.Enqueue(fmt.Sprint(i), nil)
+	}
+	for i := 0; i < 50; i++ {
+		if i <= 20 {
+			if tq.Tick(i, handler) != i {
+				t.Fatal("tq.Tick(i, handler) != i")
+			}
+		} else {
+			if tq.Tick(i, handler) != 20 {
+				t.Fatal("tq.Tick(i, handler) != 20")
+			}
+		}
 	}
 }
