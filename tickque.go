@@ -32,9 +32,9 @@ type JobHandler func(job *Job) bool
 
 type Tickque struct {
 	slog.Logger
-	name                       string
-	tickStartNtf               bool
-	tickExecutionTimeThreshold time.Duration
+	name                  string
+	tickStartNtf          bool
+	tickExecTimeThreshold time.Duration
 
 	mu sync.Mutex
 	dq *Deque
@@ -44,10 +44,10 @@ type Tickque struct {
 
 func NewTickque(name string, opts ...Option) (tq *Tickque) {
 	tq = &Tickque{
-		name:                       name,
-		Logger:                     slog.NewConsoleLogger(),
-		tickExecutionTimeThreshold: time.Millisecond * 100,
-		dq:                         NewDeque(),
+		name:                  name,
+		Logger:                slog.NewConsoleLogger(),
+		tickExecTimeThreshold: time.Millisecond * 100,
+		dq:                    NewDeque(),
 	}
 	for _, opt := range opts {
 		opt(tq)
@@ -74,7 +74,7 @@ func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) (numProcessed i
 		}
 
 		atomic.AddInt64(&this.totalProcessed, int64(numProcessed))
-		if d := time.Since(startTime); d > this.tickExecutionTimeThreshold {
+		if d := time.Since(startTime); d > this.tickExecTimeThreshold {
 			this.Warnf("<tickque.%s> the tick cost too much time. d: %v", this.name, d)
 		}
 	}()
@@ -155,8 +155,8 @@ func WithTickStartNtf() Option {
 	}
 }
 
-func WithTickExecutionTimeThreshold(d time.Duration) Option {
+func WithTickExecTimeThreshold(d time.Duration) Option {
 	return func(tq *Tickque) {
-		tq.tickExecutionTimeThreshold = d
+		tq.tickExecTimeThreshold = d
 	}
 }

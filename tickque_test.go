@@ -206,7 +206,7 @@ func TestWithTickExecutionTimeThreshold(t *testing.T) {
 	}
 
 	scav := slog.NewScavenger()
-	tq := NewTickque("alpha", WithLogger(scav), WithTickExecutionTimeThreshold(time.Millisecond*10))
+	tq := NewTickque("alpha", WithLogger(scav), WithTickExecTimeThreshold(time.Millisecond*10))
 	tq.Enqueue("1", nil)
 	tq.Enqueue("2", nil)
 	tq.Enqueue("3", nil)
@@ -215,7 +215,7 @@ func TestWithTickExecutionTimeThreshold(t *testing.T) {
 		t.Fatal("processed != 1")
 	}
 	if _, _, ok := scav.FindString("the tick cost too much time"); !ok {
-		t.Fatal("WithTickExecutionTimeThreshold does not work as expected")
+		t.Fatal("WithTickExecTimeThreshold does not work as expected")
 	}
 
 	scav.Reset()
@@ -223,7 +223,7 @@ func TestWithTickExecutionTimeThreshold(t *testing.T) {
 		t.Fatal("processed != 1")
 	}
 	if _, _, ok := scav.FindString("the tick cost too much time"); ok {
-		t.Fatal("WithTickExecutionTimeThreshold does not work as expected")
+		t.Fatal("WithTickExecTimeThreshold does not work as expected")
 	}
 }
 
