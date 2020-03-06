@@ -132,13 +132,6 @@ func (this *Tickque) Retry(job *Job) {
 	this.mu.Unlock()
 }
 
-func (this *Tickque) DequeueMany(max int) []*Job {
-	this.mu.Lock()
-	a := this.dq.DequeueMany(max)
-	this.mu.Unlock()
-	return a
-}
-
 func (this *Tickque) NumPendingJobs() int {
 	this.mu.Lock()
 	n := this.dq.Len()
