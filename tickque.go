@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/edwingeng/live"
 	"github.com/edwingeng/slog"
 )
 
@@ -19,7 +20,7 @@ var (
 
 type Job struct {
 	Type string
-	Data []byte
+	Data live.Data
 
 	tryNumber int
 }
@@ -119,9 +120,13 @@ func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) (numProcessed i
 	return
 }
 
-func (this *Tickque) Enqueue(jobType string, jobData []byte) {
+func (this *Tickque) Enqueue(jobType string, jobData live.Data) {
 	this.mu.Lock()
-	this.dq.Enqueue(&Job{Type: jobType, Data: jobData, tryNumber: 1})
+	this.dq.Enqueue(&Job{
+		Type:      jobType,
+		Data:      jobData,
+		tryNumber: 1,
+	})
 	this.mu.Unlock()
 }
 

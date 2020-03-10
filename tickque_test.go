@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/edwingeng/live"
 	"github.com/edwingeng/slog"
 )
 
@@ -18,7 +19,7 @@ func TestTickque_Routine(t *testing.T) {
 	for _, v := range []int{0, 3, 9, 10, 11, 19, 100} {
 		n = 0
 		for i := 0; i < v; i++ {
-			tq.Enqueue(fmt.Sprintf("alpha-%d-%d", v, i), nil)
+			tq.Enqueue(fmt.Sprintf("alpha-%d-%d", v, i), live.Nil)
 		}
 		var c1 int
 		for tq.NumPendingJobs() > 0 {
@@ -60,7 +61,7 @@ func TestWithTickStartNtf(t *testing.T) {
 	for _, v := range []int{0, 3, 9, 10, 11, 19, 100} {
 		n = 0
 		for i := 0; i < v; i++ {
-			tq.Enqueue(fmt.Sprintf("alpha-%d-%d", v, i), nil)
+			tq.Enqueue(fmt.Sprintf("alpha-%d-%d", v, i), live.Nil)
 		}
 		var c1 int
 		for tq.NumPendingJobs() > 0 {
@@ -98,7 +99,7 @@ func TestTickque_Panic(t *testing.T) {
 	scav := slog.NewScavenger()
 	tq := NewTickque("alpha", WithLogger(scav))
 	for i := 0; i < 5; i++ {
-		tq.Enqueue(fmt.Sprint(i), nil)
+		tq.Enqueue(fmt.Sprint(i), live.Nil)
 	}
 
 	if processed := tq.Tick(10, handler); processed != 2 {
@@ -137,7 +138,7 @@ func TestTickque_Halt(t *testing.T) {
 	}
 	tq := NewTickque("alpha")
 	for i := 0; i < 15; i++ {
-		tq.Enqueue(fmt.Sprint(i), nil)
+		tq.Enqueue(fmt.Sprint(i), live.Nil)
 	}
 
 	if processed := tq.Tick(10, handler); processed != 2 {
@@ -182,9 +183,9 @@ func TestWithTickExecTimeThreshold(t *testing.T) {
 
 	scav := slog.NewScavenger()
 	tq := NewTickque("alpha", WithLogger(scav), WithTickExecTimeThreshold(time.Millisecond*10))
-	tq.Enqueue("1", nil)
-	tq.Enqueue("2", nil)
-	tq.Enqueue("3", nil)
+	tq.Enqueue("1", live.Nil)
+	tq.Enqueue("2", live.Nil)
+	tq.Enqueue("3", live.Nil)
 
 	if processed := tq.Tick(1, handler); processed != 1 {
 		t.Fatal("processed != 1")
@@ -223,7 +224,7 @@ func TestTickque_Retry(t *testing.T) {
 		t.Fatal("tq.Tick(1, handler) != 0")
 	}
 
-	tq.Enqueue("0", nil)
+	tq.Enqueue("0", live.Nil)
 	for i := 0; i < 10; i++ {
 		tq.Tick(10, handler)
 		if n != i+1 {
@@ -233,7 +234,7 @@ func TestTickque_Retry(t *testing.T) {
 
 	n = -1
 	for i := 1; i < 10; i++ {
-		tq.Enqueue(fmt.Sprint(i), nil)
+		tq.Enqueue(fmt.Sprint(i), live.Nil)
 	}
 	for i := 0; i < 50; i++ {
 		if i <= 10 {
@@ -248,7 +249,7 @@ func TestTickque_Retry(t *testing.T) {
 	}
 
 	for i := 0; i < 10; i++ {
-		tq.Enqueue(fmt.Sprint(i), nil)
+		tq.Enqueue(fmt.Sprint(i), live.Nil)
 	}
 	for i := 0; i < 50; i++ {
 		if i <= 20 {
