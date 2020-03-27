@@ -1,2 +1,2 @@
 # tickque
-A job queue designed especially for processing jobs in ticks/updates/beats.
+A job queue designed especially for server tick/update/heartbeat.
