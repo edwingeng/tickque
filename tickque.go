@@ -74,6 +74,19 @@ func minInt(n1, n2 int) int {
 
 func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) (numProcessed int) {
 	startTime := time.Now()
+	if this.tickStartNtf {
+		if !jobHandler(jobTickStart) {
+			return
+		}
+	}
+	numProcessed = this.impl(maxNumJobs, jobHandler, &this.jq)
+	if d := time.Since(startTime); d > this.tickExecTimeThreshold {
+		this.Warnf("<tickque.%s> the tick cost too much time. d: %v", this.name, d)
+	}
+	return numProcessed
+}
+
+func (this *Tickque) impl(maxNumJobs int, jobHandler JobHandler, jq *jobQueue) (numProcessed int) {
 	var pending []*Job
 	var pendingIdx int
 	defer func() {
@@ -82,35 +95,26 @@ func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) (numProcessed i
 		}
 
 		if pendingIdx < len(pending) {
-			this.jq.mu.Lock()
+			jq.mu.Lock()
 			for i := len(pending) - 1; i >= pendingIdx; i-- {
-				this.jq.dq.PushFront(pending[i])
+				jq.dq.PushFront(pending[i])
 			}
-			this.jq.mu.Unlock()
+			jq.mu.Unlock()
 		}
 
 		atomic.AddInt64(&this.totalProcessed, int64(numProcessed))
-		if d := time.Since(startTime); d > this.tickExecTimeThreshold {
-			this.Warnf("<tickque.%s> the tick cost too much time. d: %v", this.name, d)
-		}
 	}()
 
-	if this.tickStartNtf {
-		if !jobHandler(jobTickStart) {
-			return
-		}
-	}
-
-	this.jq.mu.Lock()
-	remainingJobs := minInt(this.jq.dq.Len(), maxNumJobs)
-	this.jq.mu.Unlock()
+	jq.mu.Lock()
+	remainingJobs := minInt(jq.dq.Len(), maxNumJobs)
+	jq.mu.Unlock()
 
 	for remainingJobs > 0 {
 		const batchSize = 16
 		n := minInt(remainingJobs, batchSize)
-		this.jq.mu.Lock()
-		pending = this.jq.dq.DequeueMany(n)
-		this.jq.mu.Unlock()
+		jq.mu.Lock()
+		pending = jq.dq.DequeueMany(n)
+		jq.mu.Unlock()
 		n = len(pending)
 		for pendingIdx = 0; pendingIdx < n; {
 			job := pending[pendingIdx]
