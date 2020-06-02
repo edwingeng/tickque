@@ -31,14 +31,22 @@ func (this *Job) TryNumber() int {
 
 type JobHandler func(job *Job) bool
 
+type jobQueue struct {
+	mu sync.Mutex
+	dq Deque
+}
+
+func newJobQueue() jobQueue {
+	return jobQueue{dq: *NewDeque()}
+}
+
 type Tickque struct {
 	slog.Logger
 	name                  string
 	tickStartNtf          bool
 	tickExecTimeThreshold time.Duration
 
-	mu sync.Mutex
-	dq *Deque
+	jq jobQueue
 
 	totalProcessed int64
 }
@@ -48,7 +56,7 @@ func NewTickque(name string, opts ...Option) (tq *Tickque) {
 		name:                  name,
 		Logger:                slog.NewConsoleLogger(),
 		tickExecTimeThreshold: time.Millisecond * 100,
-		dq:                    NewDeque(),
+		jq:                    newJobQueue(),
 	}
 	for _, opt := range opts {
 		opt(tq)
@@ -74,11 +82,11 @@ func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) (numProcessed i
 		}
 
 		if pendingIdx < len(pending) {
-			this.mu.Lock()
+			this.jq.mu.Lock()
 			for i := len(pending) - 1; i >= pendingIdx; i-- {
-				this.dq.PushFront(pending[i])
+				this.jq.dq.PushFront(pending[i])
 			}
-			this.mu.Unlock()
+			this.jq.mu.Unlock()
 		}
 
 		atomic.AddInt64(&this.totalProcessed, int64(numProcessed))
@@ -93,16 +101,16 @@ func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) (numProcessed i
 		}
 	}
 
-	this.mu.Lock()
-	remainingJobs := minInt(this.dq.Len(), maxNumJobs)
-	this.mu.Unlock()
+	this.jq.mu.Lock()
+	remainingJobs := minInt(this.jq.dq.Len(), maxNumJobs)
+	this.jq.mu.Unlock()
 
 	for remainingJobs > 0 {
 		const batchSize = 16
 		n := minInt(remainingJobs, batchSize)
-		this.mu.Lock()
-		pending = this.dq.DequeueMany(n)
-		this.mu.Unlock()
+		this.jq.mu.Lock()
+		pending = this.jq.dq.DequeueMany(n)
+		this.jq.mu.Unlock()
 		n = len(pending)
 		for pendingIdx = 0; pendingIdx < n; {
 			job := pending[pendingIdx]
@@ -121,26 +129,26 @@ func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) (numProcessed i
 }
 
 func (this *Tickque) Enqueue(jobType string, jobData live.Data) {
-	this.mu.Lock()
-	this.dq.Enqueue(&Job{
+	this.jq.mu.Lock()
+	this.jq.dq.Enqueue(&Job{
 		Type:      jobType,
 		Data:      jobData,
 		tryNumber: 1,
 	})
-	this.mu.Unlock()
+	this.jq.mu.Unlock()
 }
 
 func (this *Tickque) Retry(job *Job) {
 	job.tryNumber++
-	this.mu.Lock()
-	this.dq.Enqueue(job)
-	this.mu.Unlock()
+	this.jq.mu.Lock()
+	this.jq.dq.Enqueue(job)
+	this.jq.mu.Unlock()
 }
 
 func (this *Tickque) NumPendingJobs() int {
-	this.mu.Lock()
-	n := this.dq.Len()
-	this.mu.Unlock()
+	this.jq.mu.Lock()
+	n := this.jq.dq.Len()
+	this.jq.mu.Unlock()
 	return n
 }
 
