@@ -22,10 +22,14 @@ type Job struct {
 	Type string
 	Data live.Data
 
-	tryNumber int
+	tryNumber int32
+	burst     struct {
+		bool
+		int8
+	}
 }
 
-func (this *Job) TryNumber() int {
+func (this *Job) TryNumber() int32 {
 	return this.tryNumber
 }
 
@@ -46,6 +50,12 @@ type Tickque struct {
 	tickStartNtf          bool
 	tickExecTimeThreshold time.Duration
 
+	burst struct {
+		numThreads uint64
+		queues     []jobQueue
+		wg         sync.WaitGroup
+	}
+
 	jq jobQueue
 
 	totalProcessed int64
@@ -60,6 +70,9 @@ func NewTickque(name string, opts ...Option) (tq *Tickque) {
 	}
 	for _, opt := range opts {
 		opt(tq)
+	}
+	for i := 0; i < int(tq.burst.numThreads); i++ {
+		tq.burst.queues = append(tq.burst.queues, newJobQueue())
 	}
 	return
 }
@@ -79,14 +92,36 @@ func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) (numProcessed i
 			return
 		}
 	}
-	numProcessed = this.impl(maxNumJobs, jobHandler, &this.jq)
+
+	var total int64
+	num := this.tickImpl(maxNumJobs, jobHandler, &this.jq)
+	atomic.AddInt64(&total, int64(num))
+
+	if d := maxNumJobs - num; d > 0 {
+		for i := 0; i < len(this.burst.queues); i++ {
+			jq := &this.burst.queues[i]
+			jq.mu.Lock()
+			empty := jq.dq.Empty()
+			jq.mu.Unlock()
+			if !empty {
+				this.burst.wg.Add(1)
+				go func() {
+					num = this.tickImpl(d, jobHandler, jq)
+					atomic.AddInt64(&total, int64(num))
+					this.burst.wg.Done()
+				}()
+			}
+		}
+		this.burst.wg.Wait()
+	}
+
 	if d := time.Since(startTime); d > this.tickExecTimeThreshold {
 		this.Warnf("<tickque.%s> the tick cost too much time. d: %v", this.name, d)
 	}
-	return numProcessed
+	return int(atomic.LoadInt64(&total))
 }
 
-func (this *Tickque) impl(maxNumJobs int, jobHandler JobHandler, jq *jobQueue) (numProcessed int) {
+func (this *Tickque) tickImpl(maxNumJobs int, jobHandler JobHandler, jq *jobQueue) (numProcessed int) {
 	var pending []*Job
 	var pendingIdx int
 	defer func() {
@@ -142,17 +177,59 @@ func (this *Tickque) Enqueue(jobType string, jobData live.Data) {
 	this.jq.mu.Unlock()
 }
 
+func (this *Tickque) EnqueueBurstJob(hint int64, jobType string, jobData live.Data) {
+	if this.burst.numThreads == 0 {
+		panic("no WithNumBurstThreads option on creation")
+	}
+
+	index := int8(hash64(uint64(hint)) % this.burst.numThreads)
+	jq := &this.burst.queues[index]
+	jq.mu.Lock()
+	jq.dq.Enqueue(&Job{
+		Type:      jobType,
+		Data:      jobData,
+		tryNumber: 1,
+		burst: struct {
+			bool
+			int8
+		}{
+			bool: true,
+			int8: index,
+		},
+	})
+	jq.mu.Unlock()
+}
+
+func hash64(x uint64) uint64 {
+	x = (x ^ (x >> 30)) * uint64(0xbf58476d1ce4e5b9)
+	x = (x ^ (x >> 27)) * uint64(0x94d049bb133111eb)
+	return x ^ (x >> 31)
+}
+
 func (this *Tickque) Retry(job *Job) {
 	job.tryNumber++
-	this.jq.mu.Lock()
-	this.jq.dq.Enqueue(job)
-	this.jq.mu.Unlock()
+	if !job.burst.bool {
+		this.jq.mu.Lock()
+		this.jq.dq.Enqueue(job)
+		this.jq.mu.Unlock()
+	} else {
+		jq := &this.burst.queues[job.burst.int8]
+		jq.mu.Lock()
+		jq.dq.Enqueue(job)
+		jq.mu.Unlock()
+	}
 }
 
 func (this *Tickque) NumPendingJobs() int {
 	this.jq.mu.Lock()
 	n := this.jq.dq.Len()
 	this.jq.mu.Unlock()
+	for i := 0; i < len(this.burst.queues); i++ {
+		jq := &this.burst.queues[i]
+		jq.mu.Lock()
+		n += jq.dq.Len()
+		jq.mu.Unlock()
+	}
 	return n
 }
 
@@ -177,5 +254,14 @@ func WithTickStartNtf() Option {
 func WithTickExecTimeThreshold(d time.Duration) Option {
 	return func(tq *Tickque) {
 		tq.tickExecTimeThreshold = d
+	}
+}
+
+func WithNumBurstThreads(n int) Option {
+	if n < 0 || n > 64 {
+		panic("invalid number of burst threads")
+	}
+	return func(tq *Tickque) {
+		tq.burst.numThreads = uint64(n)
 	}
 }

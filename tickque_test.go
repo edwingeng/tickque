@@ -204,7 +204,7 @@ func TestWithTickExecTimeThreshold(t *testing.T) {
 }
 
 func TestTickque_Retry(t *testing.T) {
-	var n int
+	var n int32
 	tq := NewTickque("alpha")
 	handler := func(job *Job) bool {
 		switch job.Type {
@@ -227,7 +227,7 @@ func TestTickque_Retry(t *testing.T) {
 	tq.Enqueue("0", live.Nil)
 	for i := 0; i < 10; i++ {
 		tq.Tick(10, handler)
-		if n != i+1 {
+		if n != int32(i)+1 {
 			t.Fatal("n != i+1")
 		}
 	}
