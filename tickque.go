@@ -33,7 +33,7 @@ func (this *Job) TryNumber() int32 {
 	return this.tryNumber
 }
 
-func (this *Job) Burst() bool {
+func (this *Job) Bursting() bool {
 	return this.burst.bool
 }
 
