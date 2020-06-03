@@ -33,6 +33,10 @@ func (this *Job) TryNumber() int32 {
 	return this.tryNumber
 }
 
+func (this *Job) Burst() bool {
+	return this.burst.bool
+}
+
 type JobHandler func(job *Job) bool
 
 type jobQueue struct {
@@ -85,19 +89,19 @@ func minInt(n1, n2 int) int {
 	}
 }
 
-func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) (numProcessed int) {
+func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) int {
 	startTime := time.Now()
 	if this.tickStartNtf {
 		if !jobHandler(jobTickStart) {
-			return
+			return 0
 		}
 	}
 
 	var total int64
-	num := this.tickImpl(maxNumJobs, jobHandler, &this.jq)
-	atomic.AddInt64(&total, int64(num))
+	n1 := this.processJobQueue(maxNumJobs, jobHandler, &this.jq)
+	atomic.AddInt64(&total, int64(n1))
 
-	if d := maxNumJobs - num; d > 0 {
+	if d := maxNumJobs - n1; d > 0 {
 		for i := 0; i < len(this.burst.queues); i++ {
 			jq := &this.burst.queues[i]
 			jq.mu.Lock()
@@ -106,8 +110,8 @@ func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) (numProcessed i
 			if !empty {
 				this.burst.wg.Add(1)
 				go func() {
-					num = this.tickImpl(d, jobHandler, jq)
-					atomic.AddInt64(&total, int64(num))
+					n2 := this.processJobQueue(d, jobHandler, jq)
+					atomic.AddInt64(&total, int64(n2))
 					this.burst.wg.Done()
 				}()
 			}
@@ -118,10 +122,11 @@ func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) (numProcessed i
 	if d := time.Since(startTime); d > this.tickExecTimeThreshold {
 		this.Warnf("<tickque.%s> the tick cost too much time. d: %v", this.name, d)
 	}
+
 	return int(atomic.LoadInt64(&total))
 }
 
-func (this *Tickque) tickImpl(maxNumJobs int, jobHandler JobHandler, jq *jobQueue) (numProcessed int) {
+func (this *Tickque) processJobQueue(maxNumJobs int, jobHandler JobHandler, jq *jobQueue) (numProcessed int) {
 	var pending []*Job
 	var pendingIdx int
 	defer func() {
@@ -146,12 +151,12 @@ func (this *Tickque) tickImpl(maxNumJobs int, jobHandler JobHandler, jq *jobQueu
 
 	for remainingJobs > 0 {
 		const batchSize = 16
-		n := minInt(remainingJobs, batchSize)
+		n1 := minInt(remainingJobs, batchSize)
 		jq.mu.Lock()
-		pending = jq.dq.DequeueMany(n)
+		pending = jq.dq.DequeueMany(n1)
 		jq.mu.Unlock()
-		n = len(pending)
-		for pendingIdx = 0; pendingIdx < n; {
+		n2 := len(pending)
+		for pendingIdx = 0; pendingIdx < n2; {
 			job := pending[pendingIdx]
 			pendingIdx++
 			numProcessed++
@@ -159,10 +164,10 @@ func (this *Tickque) tickImpl(maxNumJobs int, jobHandler JobHandler, jq *jobQueu
 				return
 			}
 		}
-		if n < batchSize {
+		if n2 < batchSize {
 			return
 		}
-		remainingJobs -= n
+		remainingJobs -= n2
 	}
 	return
 }
@@ -179,7 +184,7 @@ func (this *Tickque) Enqueue(jobType string, jobData live.Data) {
 
 func (this *Tickque) EnqueueBurstJob(hint int64, jobType string, jobData live.Data) {
 	if this.burst.numThreads == 0 {
-		panic("no WithNumBurstThreads option on creation")
+		panic("it seems that the WithNumBurstThreads option was forgotten")
 	}
 
 	index := int8(hash64(uint64(hint)) % this.burst.numThreads)
