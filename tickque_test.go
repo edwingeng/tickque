@@ -2,6 +2,8 @@ package tickque
 
 import (
 	"fmt"
+	"math/rand"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -262,4 +264,62 @@ func TestTickque_Retry(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestTickque_Burst(t *testing.T) {
+	rand.Seed(time.Now().Unix())
+	const numThreads = 4
+	var threadCounters [numThreads]int64
+	var remaining, counter, numPanics, numRetries int64
+	var tq *Tickque
+	handler := func(job *Job) bool {
+		atomic.AddInt64(&counter, 1)
+		if job.burst.bool {
+			atomic.AddInt64(&threadCounters[job.burst.int8], 1)
+		}
+		n := rand.Intn(100)
+		switch {
+		case n < 5:
+			atomic.AddInt64(&remaining, -1)
+			atomic.AddInt64(&numPanics, 1)
+			panic("boom!")
+		case n < 20:
+			atomic.AddInt64(&numRetries, 1)
+			tq.Retry(job)
+		default:
+			atomic.AddInt64(&remaining, -1)
+		}
+		return true
+	}
+
+	const total = 100000
+	tq = NewTickque("alpha", WithLogger(slog.DumbLogger{}), WithNumBurstThreads(numThreads))
+	for i := 0; i < total; i++ {
+		n := rand.Intn(100)
+		switch {
+		case n < 5:
+			tq.Enqueue(fmt.Sprint(i), live.Nil)
+		default:
+			tq.EnqueueBurstJob(int64(i), fmt.Sprint(i), live.Nil)
+		}
+	}
+
+	remaining = total
+	var numProcessed int64
+	for tq.NumPendingJobs() > 0 {
+		n := tq.Tick(rand.Intn(300), handler)
+		numProcessed += int64(n)
+	}
+
+	if atomic.LoadInt64(&remaining) != 0 {
+		t.Fatal("remaining != 0", atomic.LoadInt64(&remaining))
+	}
+	if atomic.LoadInt64(&counter) != numProcessed {
+		t.Fatal("counter != numProcessed")
+	}
+	if atomic.LoadInt64(&counter) != total+atomic.LoadInt64(&numRetries) {
+		t.Fatal("counter != total+numRetries")
+	}
+
+	t.Logf("thread counters: %v", threadCounters)
 }
