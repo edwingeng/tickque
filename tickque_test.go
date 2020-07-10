@@ -1,6 +1,7 @@
 package tickque
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"sync/atomic"
@@ -322,4 +323,65 @@ func TestTickque_Burst(t *testing.T) {
 	}
 
 	t.Logf("thread counters: %v", threadCounters)
+}
+
+func TestTickque_Shutdown(t *testing.T) {
+	var n1 int
+	handler1 := func(job *Job) bool {
+		n1++
+		return true
+	}
+	tq1 := NewTickque("alpha")
+	liveHelper := live.NewHelper(nil, nil)
+	data := []int{0, 3, 9, 10, 11, 19, 100}
+	for _, v := range data {
+		tq1.Enqueue(fmt.Sprintf("alpha-%d", v), liveHelper.WrapInt(v))
+	}
+	if total, err := tq1.Shutdown(context.Background(), handler1); err != nil {
+		t.Fatal(err)
+	} else if total != len(data) {
+		t.Fatal("total != len(data)", total)
+	} else if n1 != len(data) {
+		t.Fatal("n1 != len(data)")
+	}
+
+	var n2 int
+	handler2 := func(job *Job) bool {
+		n2++
+		if v := job.Data.ToInt(); v == 10 {
+			panic(v)
+		}
+		return true
+	}
+	tq2 := NewTickque("alpha", WithLogger(slog.DumbLogger{}))
+	for _, v := range data {
+		tq2.Enqueue(fmt.Sprintf("alpha-%d", v), liveHelper.WrapInt(v))
+	}
+	if total, err := tq2.Shutdown(context.Background(), handler2); err != nil {
+		t.Fatal(err)
+	} else if total != len(data) {
+		t.Fatal("total != len(data)")
+	} else if n2 != len(data) {
+		t.Fatal("n2 != len(data)")
+	}
+
+	var n3 int
+	handler3 := func(job *Job) bool {
+		n3++
+		if v := job.Data.ToInt(); v >= 10 {
+			panic(v)
+		}
+		return true
+	}
+	tq3 := NewTickque("alpha", WithLogger(slog.DumbLogger{}))
+	for _, v := range data {
+		tq3.Enqueue(fmt.Sprintf("alpha-%d", v), liveHelper.WrapInt(v))
+	}
+	if total, err := tq3.Shutdown(context.Background(), handler3); err != nil {
+		t.Fatal(err)
+	} else if total != len(data) {
+		t.Fatal("total != len(data)")
+	} else if n3 != len(data) {
+		t.Fatal("n3 != len(data)")
+	}
 }

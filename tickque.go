@@ -1,6 +1,7 @@
 package tickque
 
 import (
+	"context"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
@@ -240,6 +241,22 @@ func (this *Tickque) NumPendingJobs() int {
 
 func (this *Tickque) TotalProcessed() int64 {
 	return atomic.LoadInt64(&this.totalProcessed)
+}
+
+func (this *Tickque) Shutdown(ctx context.Context, jobHandler JobHandler) (int, error) {
+	var total int
+	for i := this.NumPendingJobs(); i > 0; {
+		select {
+		case <-ctx.Done():
+			return total, ctx.Err()
+		default:
+			if n := this.Tick(100000, jobHandler); n > 0 {
+				total += n
+				i -= n
+			}
+		}
+	}
+	return total, nil
 }
 
 type Option func(tq *Tickque)
