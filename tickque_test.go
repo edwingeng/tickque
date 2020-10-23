@@ -332,7 +332,7 @@ func TestTickque_Shutdown(t *testing.T) {
 		return true
 	}
 	tq1 := NewTickque("alpha")
-	liveHelper := live.NewHelper(nil, nil)
+	liveHelper := live.NewHelper(nil)
 	data := []int{0, 3, 9, 10, 11, 19, 100}
 	for _, v := range data {
 		tq1.Enqueue(fmt.Sprintf("alpha-%d", v), liveHelper.WrapInt(v))
