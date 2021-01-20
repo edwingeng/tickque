@@ -173,12 +173,14 @@ func (this *Tickque) processJobQueue(maxNumJobs int, jobHandler JobHandler, jq *
 }
 
 func (this *Tickque) Enqueue(jobType string, jobData live.Data) {
+	j := jobPool.Get().(*Job)
+	j.Type = jobType
+	j.Data = jobData
+	j.tryNumber = 1
+	j.burstInfo = burstInfo{}
+
 	this.jq.mu.Lock()
-	this.jq.dq.Enqueue(&Job{
-		Type:      jobType,
-		Data:      jobData,
-		tryNumber: 1,
-	})
+	this.jq.dq.Enqueue(j)
 	this.jq.mu.Unlock()
 }
 
@@ -189,16 +191,16 @@ func (this *Tickque) EnqueueBurstJob(hint int64, jobType string, jobData live.Da
 
 	index := int8(hash64(uint64(hint)) % this.burst.numThreads)
 	jq := &this.burst.queues[index]
+
+	j := jobPool.Get().(*Job)
+	j.Type = jobType
+	j.Data = jobData
+	j.tryNumber = 1
+	j.burstInfo.bool = true
+	j.burstInfo.lane = index
+
 	jq.mu.Lock()
-	jq.dq.Enqueue(&Job{
-		Type:      jobType,
-		Data:      jobData,
-		tryNumber: 1,
-		burstInfo: burstInfo{
-			bool: true,
-			lane: index,
-		},
-	})
+	jq.dq.Enqueue(j)
 	jq.mu.Unlock()
 }
 

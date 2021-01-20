@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -383,5 +384,37 @@ func TestTickque_Shutdown(t *testing.T) {
 		t.Fatal("total != len(data)")
 	} else if n3 != len(data) {
 		t.Fatal("n3 != len(data)")
+	}
+}
+
+func TestTickque_Recycle(t *testing.T) {
+	var n int32
+	handler := func(job *Job) bool {
+		atomic.AddInt32(&n, 1)
+		Recycle(job)
+		return true
+	}
+	tq := NewTickque("alpha", WithNumBurstThreads(8))
+	for i := 0; i < 100; i++ {
+		tq.Enqueue("1", live.Nil)
+		go func() {
+			for j := 0; j < 100; j++ {
+				tq.EnqueueBurstJob(rand.Int63(), "2", live.Nil)
+			}
+		}()
+	}
+	var sum int
+	for sum != 10100 {
+		runtime.Gosched()
+		sum += tq.Tick(1000, handler)
+	}
+	if atomic.LoadInt32(&n) != 10100 {
+		t.Fatal("atomic.LoadInt32(&n) != 10100")
+	}
+
+	time.Sleep(time.Millisecond * 100)
+	sum += tq.Tick(1000, handler)
+	if sum != 10100 {
+		t.Fatal("sum != 10100")
 	}
 }
