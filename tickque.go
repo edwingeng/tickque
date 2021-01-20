@@ -53,9 +53,9 @@ func newJobQueue() jobQueue {
 
 type Tickque struct {
 	slog.Logger
-	name                  string
-	tickStartNtf          bool
-	tickExecTimeThreshold time.Duration
+	name                 string
+	tickStartNtf         bool
+	slowWarningThreshold time.Duration
 
 	burst struct {
 		numThreads uint64
@@ -70,10 +70,10 @@ type Tickque struct {
 
 func NewTickque(name string, opts ...Option) (tq *Tickque) {
 	tq = &Tickque{
-		name:                  name,
-		Logger:                slog.NewConsoleLogger(),
-		tickExecTimeThreshold: time.Millisecond * 100,
-		jq:                    newJobQueue(),
+		name:                 name,
+		Logger:               slog.NewConsoleLogger(),
+		slowWarningThreshold: time.Millisecond * 100,
+		jq:                   newJobQueue(),
 	}
 	for _, opt := range opts {
 		opt(tq)
@@ -122,7 +122,7 @@ func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) int {
 		this.burst.wg.Wait()
 	}
 
-	if d := time.Since(startTime); d > this.tickExecTimeThreshold {
+	if d := time.Since(startTime); d > this.slowWarningThreshold {
 		this.Warnf("<tickque.%s> the tick cost too much time. d: %v", this.name, d)
 	}
 
@@ -269,9 +269,9 @@ func WithTickStartNtf() Option {
 	}
 }
 
-func WithTickExecTimeThreshold(d time.Duration) Option {
+func WithSlowWarningThreshold(d time.Duration) Option {
 	return func(tq *Tickque) {
-		tq.tickExecTimeThreshold = d
+		tq.slowWarningThreshold = d
 	}
 }
 

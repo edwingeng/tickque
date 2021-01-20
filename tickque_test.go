@@ -175,7 +175,7 @@ func TestTickque_Halt(t *testing.T) {
 	}
 }
 
-func TestWithTickExecTimeThreshold(t *testing.T) {
+func TestWithSlowWarningThreshold(t *testing.T) {
 	var n int
 	handler := func(job *Job) bool {
 		if n++; n == 1 {
@@ -185,7 +185,7 @@ func TestWithTickExecTimeThreshold(t *testing.T) {
 	}
 
 	scav := slog.NewScavenger()
-	tq := NewTickque("alpha", WithLogger(scav), WithTickExecTimeThreshold(time.Millisecond*10))
+	tq := NewTickque("alpha", WithLogger(scav), WithSlowWarningThreshold(time.Millisecond*10))
 	tq.Enqueue("1", live.Nil)
 	tq.Enqueue("2", live.Nil)
 	tq.Enqueue("3", live.Nil)
@@ -194,7 +194,7 @@ func TestWithTickExecTimeThreshold(t *testing.T) {
 		t.Fatal("processed != 1")
 	}
 	if _, _, ok := scav.FindString("the tick cost too much time"); !ok {
-		t.Fatal("WithTickExecTimeThreshold does not work as expected")
+		t.Fatal("WithSlowWarningThreshold does not work as expected")
 	}
 
 	scav.Reset()
@@ -202,7 +202,7 @@ func TestWithTickExecTimeThreshold(t *testing.T) {
 		t.Fatal("processed != 1")
 	}
 	if _, _, ok := scav.FindString("the tick cost too much time"); ok {
-		t.Fatal("WithTickExecTimeThreshold does not work as expected")
+		t.Fatal("WithSlowWarningThreshold does not work as expected")
 	}
 }
 
