@@ -19,15 +19,17 @@ var (
 	jobTickStart = &Job{Type: TickStart}
 )
 
+type burstInfo struct {
+	bool
+	lane int8
+}
+
 type Job struct {
 	Type string
 	Data live.Data
 
 	tryNumber int32
-	burst     struct {
-		bool
-		int8
-	}
+	burstInfo burstInfo
 }
 
 func (this *Job) TryNumber() int32 {
@@ -35,7 +37,7 @@ func (this *Job) TryNumber() int32 {
 }
 
 func (this *Job) Bursting() bool {
-	return this.burst.bool
+	return this.burstInfo.bool
 }
 
 type JobHandler func(job *Job) bool
@@ -165,9 +167,6 @@ func (this *Tickque) processJobQueue(maxNumJobs int, jobHandler JobHandler, jq *
 				return
 			}
 		}
-		if n2 < batchSize {
-			return
-		}
 		remainingJobs -= n2
 	}
 	return
@@ -195,12 +194,9 @@ func (this *Tickque) EnqueueBurstJob(hint int64, jobType string, jobData live.Da
 		Type:      jobType,
 		Data:      jobData,
 		tryNumber: 1,
-		burst: struct {
-			bool
-			int8
-		}{
+		burstInfo: burstInfo{
 			bool: true,
-			int8: index,
+			lane: index,
 		},
 	})
 	jq.mu.Unlock()
@@ -214,12 +210,12 @@ func hash64(x uint64) uint64 {
 
 func (this *Tickque) Retry(job *Job) {
 	job.tryNumber++
-	if !job.burst.bool {
+	if !job.burstInfo.bool {
 		this.jq.mu.Lock()
 		this.jq.dq.Enqueue(job)
 		this.jq.mu.Unlock()
 	} else {
-		jq := &this.burst.queues[job.burst.int8]
+		jq := &this.burst.queues[job.burstInfo.lane]
 		jq.mu.Lock()
 		jq.dq.Enqueue(job)
 		jq.mu.Unlock()
@@ -245,14 +241,14 @@ func (this *Tickque) TotalProcessed() int64 {
 
 func (this *Tickque) Shutdown(ctx context.Context, jobHandler JobHandler) (int, error) {
 	var total int
-	for i := this.NumPendingJobs(); i > 0; {
+	for c := this.NumPendingJobs(); c > 0; {
 		select {
 		case <-ctx.Done():
 			return total, ctx.Err()
 		default:
-			if n := this.Tick(100000, jobHandler); n > 0 {
+			if n := this.Tick(1000, jobHandler); n > 0 {
 				total += n
-				i -= n
+				c -= n
 			}
 		}
 	}

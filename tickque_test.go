@@ -275,8 +275,8 @@ func TestTickque_Burst(t *testing.T) {
 	var tq *Tickque
 	handler := func(job *Job) bool {
 		atomic.AddInt64(&counter, 1)
-		if job.burst.bool {
-			atomic.AddInt64(&threadCounters[job.burst.int8], 1)
+		if job.burstInfo.bool {
+			atomic.AddInt64(&threadCounters[job.burstInfo.lane], 1)
 		}
 		n := rand.Intn(100)
 		switch {
