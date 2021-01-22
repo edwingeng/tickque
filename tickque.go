@@ -92,7 +92,7 @@ func minInt(n1, n2 int) int {
 	}
 }
 
-func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) int {
+func (this *Tickque) Tick(maxJobs int, jobHandler JobHandler) int {
 	startTime := time.Now()
 	if this.tickStartNtf {
 		if !jobHandler(jobTickStart) {
@@ -101,10 +101,10 @@ func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) int {
 	}
 
 	var total int64
-	n1 := this.processJobQueue(maxNumJobs, jobHandler, &this.jq)
+	n1 := this.processJobQueue(maxJobs, jobHandler, &this.jq)
 	atomic.AddInt64(&total, int64(n1))
 
-	if d := maxNumJobs - n1; d > 0 {
+	if d := maxJobs - n1; d > 0 {
 		for i := 0; i < len(this.burst.queues); i++ {
 			jq := &this.burst.queues[i]
 			jq.mu.Lock()
@@ -129,7 +129,7 @@ func (this *Tickque) Tick(maxNumJobs int, jobHandler JobHandler) int {
 	return int(atomic.LoadInt64(&total))
 }
 
-func (this *Tickque) processJobQueue(maxNumJobs int, jobHandler JobHandler, jq *jobQueue) (numProcessed int) {
+func (this *Tickque) processJobQueue(maxJobs int, jobHandler JobHandler, jq *jobQueue) (numProcessed int) {
 	var pending []*Job
 	var pendingIdx int
 	defer func() {
@@ -149,7 +149,7 @@ func (this *Tickque) processJobQueue(maxNumJobs int, jobHandler JobHandler, jq *
 	}()
 
 	jq.mu.Lock()
-	remainingJobs := minInt(jq.dq.Len(), maxNumJobs)
+	remainingJobs := minInt(jq.dq.Len(), maxJobs)
 	jq.mu.Unlock()
 
 	for remainingJobs > 0 {
