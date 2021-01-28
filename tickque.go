@@ -2,6 +2,7 @@ package tickque
 
 import (
 	"context"
+	"errors"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
@@ -13,6 +14,10 @@ import (
 
 const (
 	TickStart = "tickque:TickStart"
+)
+
+var (
+	ErrBreak = errors.New("break")
 )
 
 var (
@@ -40,7 +45,7 @@ func (this *Job) Bursting() bool {
 	return this.burstInfo.bool
 }
 
-type JobHandler func(job *Job) bool
+type JobHandler func(job *Job) error
 
 type jobQueue struct {
 	mu sync.Mutex
@@ -95,7 +100,7 @@ func minInt(n1, n2 int) int {
 func (this *Tickque) Tick(maxJobs int, jobHandler JobHandler) int {
 	startTime := time.Now()
 	if this.tickStartNtf {
-		if !jobHandler(jobTickStart) {
+		if jobHandler(jobTickStart) == ErrBreak {
 			return 0
 		}
 	}
@@ -163,8 +168,11 @@ func (this *Tickque) processJobQueue(maxJobs int, jobHandler JobHandler, jq *job
 			job := pending[pendingIdx]
 			pendingIdx++
 			numProcessed++
-			if !jobHandler(job) {
-				return
+			if err := jobHandler(job); err != nil {
+				if err == ErrBreak {
+					return
+				}
+				this.Error(err)
 			}
 		}
 		remainingJobs -= n2

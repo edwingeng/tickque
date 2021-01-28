@@ -15,9 +15,9 @@ import (
 
 func TestTickque_Routine(t *testing.T) {
 	var n int
-	handler := func(job *Job) bool {
+	handler := func(job *Job) error {
 		n++
-		return true
+		return nil
 	}
 	tq := NewTickque("alpha")
 	for _, v := range []int{0, 3, 9, 10, 11, 19, 100} {
@@ -48,7 +48,7 @@ func TestTickque_Routine(t *testing.T) {
 
 func TestWithTickStartNtf(t *testing.T) {
 	var n int
-	handler := func(job *Job) bool {
+	handler := func(job *Job) error {
 		n++
 		if n%11 == 1 {
 			if job.Type != TickStart {
@@ -59,7 +59,7 @@ func TestWithTickStartNtf(t *testing.T) {
 				t.Fatalf("job.Type == TickStart. job.Type: %s", job.Type)
 			}
 		}
-		return true
+		return nil
 	}
 	tq := NewTickque("alpha", WithTickStartNtf())
 	for _, v := range []int{0, 3, 9, 10, 11, 19, 100} {
@@ -90,7 +90,7 @@ func TestWithTickStartNtf(t *testing.T) {
 
 func TestTickque_Panic(t *testing.T) {
 	var n int
-	handler := func(job *Job) bool {
+	handler := func(job *Job) error {
 		if job.Type != fmt.Sprint(n) {
 			t.Fatal("job.Type != fmt.Sprint(n)")
 		}
@@ -98,7 +98,7 @@ func TestTickque_Panic(t *testing.T) {
 		if n == 2 {
 			panic("beta")
 		}
-		return true
+		return nil
 	}
 	scav := slog.NewScavenger()
 	tq := NewTickque("alpha", WithLogger(scav))
@@ -136,9 +136,13 @@ func TestTickque_Panic(t *testing.T) {
 
 func TestTickque_Halt(t *testing.T) {
 	var n int
-	handler := func(job *Job) bool {
+	handler := func(job *Job) error {
 		n++
-		return n != 2
+		if n != 2 {
+			return nil
+		} else {
+			return ErrBreak
+		}
 	}
 	tq := NewTickque("alpha")
 	for i := 0; i < 15; i++ {
@@ -178,11 +182,11 @@ func TestTickque_Halt(t *testing.T) {
 
 func TestWithSlowWarningThreshold(t *testing.T) {
 	var n int
-	handler := func(job *Job) bool {
+	handler := func(job *Job) error {
 		if n++; n == 1 {
 			time.Sleep(time.Millisecond * 30)
 		}
-		return true
+		return nil
 	}
 
 	scav := slog.NewScavenger()
@@ -210,7 +214,7 @@ func TestWithSlowWarningThreshold(t *testing.T) {
 func TestTickque_Retry(t *testing.T) {
 	var n int32
 	tq := NewTickque("alpha")
-	handler := func(job *Job) bool {
+	handler := func(job *Job) error {
 		switch job.Type {
 		case "0":
 			if n >= 0 {
@@ -221,7 +225,7 @@ func TestTickque_Retry(t *testing.T) {
 			}
 		}
 		tq.Retry(job)
-		return true
+		return nil
 	}
 
 	if tq.Tick(1, handler) != 0 {
@@ -274,7 +278,7 @@ func TestTickque_Burst(t *testing.T) {
 	var threadCounters [numThreads]int64
 	var remaining, counter, numPanics, numRetries int64
 	var tq *Tickque
-	handler := func(job *Job) bool {
+	handler := func(job *Job) error {
 		atomic.AddInt64(&counter, 1)
 		if job.burstInfo.bool {
 			atomic.AddInt64(&threadCounters[job.burstInfo.lane], 1)
@@ -291,7 +295,7 @@ func TestTickque_Burst(t *testing.T) {
 		default:
 			atomic.AddInt64(&remaining, -1)
 		}
-		return true
+		return nil
 	}
 
 	const total = 100000
@@ -328,9 +332,9 @@ func TestTickque_Burst(t *testing.T) {
 
 func TestTickque_Shutdown(t *testing.T) {
 	var n1 int
-	handler1 := func(job *Job) bool {
+	handler1 := func(job *Job) error {
 		n1++
-		return true
+		return nil
 	}
 	tq1 := NewTickque("alpha")
 	liveHelper := live.NewHelper(nil)
@@ -347,12 +351,12 @@ func TestTickque_Shutdown(t *testing.T) {
 	}
 
 	var n2 int
-	handler2 := func(job *Job) bool {
+	handler2 := func(job *Job) error {
 		n2++
 		if v := job.Data.ToInt(); v == 10 {
 			panic(v)
 		}
-		return true
+		return nil
 	}
 	tq2 := NewTickque("alpha", WithLogger(slog.DumbLogger{}))
 	for _, v := range data {
@@ -367,12 +371,12 @@ func TestTickque_Shutdown(t *testing.T) {
 	}
 
 	var n3 int
-	handler3 := func(job *Job) bool {
+	handler3 := func(job *Job) error {
 		n3++
 		if v := job.Data.ToInt(); v >= 10 {
 			panic(v)
 		}
-		return true
+		return nil
 	}
 	tq3 := NewTickque("alpha", WithLogger(slog.DumbLogger{}))
 	for _, v := range data {
@@ -389,10 +393,10 @@ func TestTickque_Shutdown(t *testing.T) {
 
 func TestTickque_Recycle(t *testing.T) {
 	var n int32
-	handler := func(job *Job) bool {
+	handler := func(job *Job) error {
 		atomic.AddInt32(&n, 1)
 		Recycle(job)
-		return true
+		return nil
 	}
 	tq := NewTickque("alpha", WithNumBurstThreads(8))
 	for i := 0; i < 100; i++ {
