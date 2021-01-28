@@ -23,7 +23,7 @@ func TestTickque_Routine(t *testing.T) {
 	for _, v := range []int{0, 3, 9, 10, 11, 19, 100} {
 		n = 0
 		for i := 0; i < v; i++ {
-			tq.Enqueue(fmt.Sprintf("alpha-%d-%d", v, i), live.Nil)
+			tq.AddJob(fmt.Sprintf("alpha-%d-%d", v, i), live.Nil)
 		}
 		var c1 int
 		for tq.NumPendingJobs() > 0 {
@@ -65,7 +65,7 @@ func TestWithTickStartNtf(t *testing.T) {
 	for _, v := range []int{0, 3, 9, 10, 11, 19, 100} {
 		n = 0
 		for i := 0; i < v; i++ {
-			tq.Enqueue(fmt.Sprintf("alpha-%d-%d", v, i), live.Nil)
+			tq.AddJob(fmt.Sprintf("alpha-%d-%d", v, i), live.Nil)
 		}
 		var c1 int
 		for tq.NumPendingJobs() > 0 {
@@ -103,7 +103,7 @@ func TestTickque_Panic(t *testing.T) {
 	scav := slog.NewScavenger()
 	tq := NewTickque("alpha", WithLogger(scav))
 	for i := 0; i < 5; i++ {
-		tq.Enqueue(fmt.Sprint(i), live.Nil)
+		tq.AddJob(fmt.Sprint(i), live.Nil)
 	}
 
 	if processed := tq.Tick(10, handler); processed != 2 {
@@ -142,7 +142,7 @@ func TestTickque_Halt(t *testing.T) {
 	}
 	tq := NewTickque("alpha")
 	for i := 0; i < 15; i++ {
-		tq.Enqueue(fmt.Sprint(i), live.Nil)
+		tq.AddJob(fmt.Sprint(i), live.Nil)
 	}
 
 	if processed := tq.Tick(10, handler); processed != 2 {
@@ -187,9 +187,9 @@ func TestWithSlowWarningThreshold(t *testing.T) {
 
 	scav := slog.NewScavenger()
 	tq := NewTickque("alpha", WithLogger(scav), WithSlowWarningThreshold(time.Millisecond*10))
-	tq.Enqueue("1", live.Nil)
-	tq.Enqueue("2", live.Nil)
-	tq.Enqueue("3", live.Nil)
+	tq.AddJob("1", live.Nil)
+	tq.AddJob("2", live.Nil)
+	tq.AddJob("3", live.Nil)
 
 	if processed := tq.Tick(1, handler); processed != 1 {
 		t.Fatal("processed != 1")
@@ -228,7 +228,7 @@ func TestTickque_Retry(t *testing.T) {
 		t.Fatal("tq.Tick(1, handler) != 0")
 	}
 
-	tq.Enqueue("0", live.Nil)
+	tq.AddJob("0", live.Nil)
 	for i := 0; i < 10; i++ {
 		tq.Tick(10, handler)
 		if n != int32(i)+1 {
@@ -238,7 +238,7 @@ func TestTickque_Retry(t *testing.T) {
 
 	n = -1
 	for i := 1; i < 10; i++ {
-		tq.Enqueue(fmt.Sprint(i), live.Nil)
+		tq.AddJob(fmt.Sprint(i), live.Nil)
 	}
 	for i := 0; i < 50; i++ {
 		if i <= 10 {
@@ -253,7 +253,7 @@ func TestTickque_Retry(t *testing.T) {
 	}
 
 	for i := 0; i < 10; i++ {
-		tq.Enqueue(fmt.Sprint(i), live.Nil)
+		tq.AddJob(fmt.Sprint(i), live.Nil)
 	}
 	for i := 0; i < 50; i++ {
 		if i <= 20 {
@@ -300,9 +300,9 @@ func TestTickque_Burst(t *testing.T) {
 		n := rand.Intn(100)
 		switch {
 		case n < 5:
-			tq.Enqueue(fmt.Sprint(i), live.Nil)
+			tq.AddJob(fmt.Sprint(i), live.Nil)
 		default:
-			tq.EnqueueBurstJob(int64(i), fmt.Sprint(i), live.Nil)
+			tq.AddBurstJob(int64(i), fmt.Sprint(i), live.Nil)
 		}
 	}
 
@@ -336,7 +336,7 @@ func TestTickque_Shutdown(t *testing.T) {
 	liveHelper := live.NewHelper(nil)
 	data := []int{0, 3, 9, 10, 11, 19, 100}
 	for _, v := range data {
-		tq1.Enqueue(fmt.Sprintf("alpha-%d", v), liveHelper.WrapInt(v))
+		tq1.AddJob(fmt.Sprintf("alpha-%d", v), liveHelper.WrapInt(v))
 	}
 	if total, err := tq1.Shutdown(context.Background(), handler1); err != nil {
 		t.Fatal(err)
@@ -356,7 +356,7 @@ func TestTickque_Shutdown(t *testing.T) {
 	}
 	tq2 := NewTickque("alpha", WithLogger(slog.DumbLogger{}))
 	for _, v := range data {
-		tq2.Enqueue(fmt.Sprintf("alpha-%d", v), liveHelper.WrapInt(v))
+		tq2.AddJob(fmt.Sprintf("alpha-%d", v), liveHelper.WrapInt(v))
 	}
 	if total, err := tq2.Shutdown(context.Background(), handler2); err != nil {
 		t.Fatal(err)
@@ -376,7 +376,7 @@ func TestTickque_Shutdown(t *testing.T) {
 	}
 	tq3 := NewTickque("alpha", WithLogger(slog.DumbLogger{}))
 	for _, v := range data {
-		tq3.Enqueue(fmt.Sprintf("alpha-%d", v), liveHelper.WrapInt(v))
+		tq3.AddJob(fmt.Sprintf("alpha-%d", v), liveHelper.WrapInt(v))
 	}
 	if total, err := tq3.Shutdown(context.Background(), handler3); err != nil {
 		t.Fatal(err)
@@ -396,10 +396,10 @@ func TestTickque_Recycle(t *testing.T) {
 	}
 	tq := NewTickque("alpha", WithNumBurstThreads(8))
 	for i := 0; i < 100; i++ {
-		tq.Enqueue("1", live.Nil)
+		tq.AddJob("1", live.Nil)
 		go func() {
 			for j := 0; j < 100; j++ {
-				tq.EnqueueBurstJob(rand.Int63(), "2", live.Nil)
+				tq.AddBurstJob(rand.Int63(), "2", live.Nil)
 			}
 		}()
 	}

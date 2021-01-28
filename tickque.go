@@ -172,7 +172,7 @@ func (this *Tickque) processJobQueue(maxJobs int, jobHandler JobHandler, jq *job
 	return
 }
 
-func (this *Tickque) Enqueue(jobType string, jobData live.Data) {
+func (this *Tickque) AddJob(jobType string, jobData live.Data) {
 	j := jobPool.Get().(*Job)
 	j.Type = jobType
 	j.Data = jobData
@@ -184,7 +184,7 @@ func (this *Tickque) Enqueue(jobType string, jobData live.Data) {
 	this.jq.mu.Unlock()
 }
 
-func (this *Tickque) EnqueueBurstJob(hint int64, jobType string, jobData live.Data) {
+func (this *Tickque) AddBurstJob(hint int64, jobType string, jobData live.Data) {
 	if this.burst.numThreads == 0 {
 		panic("it seems that the WithNumBurstThreads option was forgotten")
 	}
