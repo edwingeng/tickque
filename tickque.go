@@ -218,7 +218,7 @@ func hash64(x uint64) uint64 {
 	return x ^ (x >> 31)
 }
 
-func (this *Tickque) Retry(job *Job) {
+func (this *Tickque) Postpone(job *Job) {
 	job.tryNumber++
 	if !job.burstInfo.bool {
 		this.jq.mu.Lock()

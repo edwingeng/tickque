@@ -211,7 +211,7 @@ func TestWithSlowWarningThreshold(t *testing.T) {
 	}
 }
 
-func TestTickque_Retry(t *testing.T) {
+func TestTickque_Postpone(t *testing.T) {
 	var n int32
 	tq := NewTickque("alpha")
 	handler := func(job *Job) error {
@@ -224,7 +224,7 @@ func TestTickque_Retry(t *testing.T) {
 				}
 			}
 		}
-		tq.Retry(job)
+		tq.Postpone(job)
 		return nil
 	}
 
@@ -291,7 +291,7 @@ func TestTickque_Burst(t *testing.T) {
 			panic("boom!")
 		case n < 20:
 			atomic.AddInt64(&numRetries, 1)
-			tq.Retry(job)
+			tq.Postpone(job)
 		default:
 			atomic.AddInt64(&remaining, -1)
 		}
