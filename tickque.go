@@ -3,6 +3,7 @@ package tickque
 import (
 	"context"
 	"errors"
+	"fmt"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
@@ -97,10 +98,27 @@ func minInt(n1, n2 int) int {
 	}
 }
 
+func (this *Tickque) invokeJobHandler(jobHandler JobHandler, job *Job) bool {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("<tickque.%s> jobType: %s, panic: %+v\n%s",
+				this.name, job.Type, r, debug.Stack())
+			this.Errorw(errMsg, "jobData", fmt.Sprint(job.Data.V()))
+		}
+	}()
+	if err := jobHandler(job); err != nil {
+		if err == ErrBreak {
+			return false
+		}
+		this.Errorf("tickque job failed. jobType: %s, err: %s", job.Type, err)
+	}
+	return true
+}
+
 func (this *Tickque) Tick(maxJobs int, jobHandler JobHandler) int {
 	startTime := time.Now()
 	if this.tickStartNtf {
-		if jobHandler(jobTickStart) == ErrBreak {
+		if !this.invokeJobHandler(jobHandler, jobTickStart) {
 			return 0
 		}
 	}
@@ -168,11 +186,8 @@ func (this *Tickque) processJobQueue(maxJobs int, jobHandler JobHandler, jq *job
 			job := pending[pendingIdx]
 			pendingIdx++
 			numProcessed++
-			if err := jobHandler(job); err != nil {
-				if err == ErrBreak {
-					return
-				}
-				this.Error(err)
+			if !this.invokeJobHandler(jobHandler, job) {
+				return
 			}
 		}
 		remainingJobs -= n2
