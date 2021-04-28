@@ -266,15 +266,26 @@ func (this *Tickque) TotalProcessed() int64 {
 
 func (this *Tickque) Shutdown(ctx context.Context, jobHandler JobHandler) (int, error) {
 	var total int
-	for c := this.NumPendingJobs(); c > 0; {
+	var round int
+	for {
+		c := this.NumPendingJobs()
+		if c == 0 {
+			break
+		}
+		round++
+		if round > 1 {
+			const nap = time.Millisecond * 20
+			time.Sleep(nap)
+		}
 		select {
 		case <-ctx.Done():
 			return total, ctx.Err()
 		default:
-			if n := this.Tick(1000, jobHandler); n > 0 {
-				total += n
-				c -= n
+			maxJobs := 1000
+			if c < maxJobs {
+				maxJobs = c
 			}
+			total += this.Tick(maxJobs, jobHandler)
 		}
 	}
 	return total, nil
