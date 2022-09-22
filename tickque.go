@@ -103,7 +103,7 @@ func (this *Tickque) invokeJobHandler(jobHandler JobHandler, job *Job) bool {
 		if r := recover(); r != nil {
 			errMsg := fmt.Sprintf("<tickque.%s> jobType: %s, panic: %+v\n%s",
 				this.name, job.Type, r, debug.Stack())
-			this.Errorw(errMsg, "jobData", fmt.Sprint(job.Data.V()))
+			this.Errorw(errMsg, "jobData", fmt.Sprint(job.Data.Value()))
 		}
 	}()
 	if err := jobHandler(job); err != nil {

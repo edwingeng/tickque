@@ -337,10 +337,9 @@ func TestTickque_Shutdown(t *testing.T) {
 		return nil
 	}
 	tq1 := NewTickque("alpha")
-	liveHelper := live.NewHelper(nil)
 	data := []int{0, 3, 9, 10, 11, 19, 100}
 	for _, v := range data {
-		tq1.AddJob(fmt.Sprintf("alpha-%d", v), liveHelper.WrapInt(v))
+		tq1.AddJob(fmt.Sprintf("alpha-%d", v), live.WrapInt(v))
 	}
 	if total, err := tq1.Shutdown(context.Background(), handler1); err != nil {
 		t.Fatal(err)
@@ -353,14 +352,14 @@ func TestTickque_Shutdown(t *testing.T) {
 	var n2 int
 	handler2 := func(job *Job) error {
 		n2++
-		if v := job.Data.ToInt(); v == 10 {
+		if v := job.Data.Int(); v == 10 {
 			panic(v)
 		}
 		return nil
 	}
 	tq2 := NewTickque("alpha", WithLogger(slog.DumbLogger{}))
 	for _, v := range data {
-		tq2.AddJob(fmt.Sprintf("alpha-%d", v), liveHelper.WrapInt(v))
+		tq2.AddJob(fmt.Sprintf("alpha-%d", v), live.WrapInt(v))
 	}
 	if total, err := tq2.Shutdown(context.Background(), handler2); err != nil {
 		t.Fatal(err)
@@ -373,14 +372,14 @@ func TestTickque_Shutdown(t *testing.T) {
 	var n3 int
 	handler3 := func(job *Job) error {
 		n3++
-		if v := job.Data.ToInt(); v >= 10 {
+		if v := job.Data.Int(); v >= 10 {
 			panic(v)
 		}
 		return nil
 	}
 	tq3 := NewTickque("alpha", WithLogger(slog.DumbLogger{}))
 	for _, v := range data {
-		tq3.AddJob(fmt.Sprintf("alpha-%d", v), liveHelper.WrapInt(v))
+		tq3.AddJob(fmt.Sprintf("alpha-%d", v), live.WrapInt(v))
 	}
 	if total, err := tq3.Shutdown(context.Background(), handler3); err != nil {
 		t.Fatal(err)

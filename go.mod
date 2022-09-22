@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/edwingeng/deque/v2 v2.1.1
-	github.com/edwingeng/live v0.0.0-20210203121802-08f2365d6a57
+	github.com/edwingeng/live v0.0.0-20220913145725-9baeee199a55
 	github.com/edwingeng/slog v0.0.0-20210815193503-ec20520ba17c
 )
 
