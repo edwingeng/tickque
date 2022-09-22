@@ -109,7 +109,7 @@ func TestTickque_Panic(t *testing.T) {
 	if processed := tq.Tick(10, handler); processed != 2 {
 		t.Fatal("processed != 2")
 	}
-	if _, _, ok := scav.FindString(", panic:"); !ok {
+	if yes := scav.StringExists(", panic:"); !yes {
 		t.Fatal("panic not detected")
 	}
 	if tq.NumPendingJobs() != 3 {
@@ -198,7 +198,7 @@ func TestWithSlowWarningThreshold(t *testing.T) {
 	if processed := tq.Tick(1, handler); processed != 1 {
 		t.Fatal("processed != 1")
 	}
-	if _, _, ok := scav.FindString("the tick cost too much time"); !ok {
+	if yes := scav.StringExists("the tick cost too much time"); !yes {
 		t.Fatal("WithSlowWarningThreshold does not work as expected")
 	}
 
@@ -206,7 +206,7 @@ func TestWithSlowWarningThreshold(t *testing.T) {
 	if processed := tq.Tick(1, handler); processed != 1 {
 		t.Fatal("processed != 1")
 	}
-	if _, _, ok := scav.FindString("the tick cost too much time"); ok {
+	if yes := scav.StringExists("the tick cost too much time"); yes {
 		t.Fatal("WithSlowWarningThreshold does not work as expected")
 	}
 }

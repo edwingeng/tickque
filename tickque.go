@@ -77,7 +77,7 @@ type Tickque struct {
 func NewTickque(name string, opts ...Option) (tq *Tickque) {
 	tq = &Tickque{
 		name:                 name,
-		Logger:               slog.NewConsoleLogger(),
+		Logger:               slog.NewDevelopmentConfig().MustBuild(),
 		slowWarningThreshold: time.Millisecond * 100,
 		jq:                   newJobQueue(),
 	}
