@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/edwingeng/deque/v2"
+	"github.com/edwingeng/live"
+	"github.com/edwingeng/slog"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/edwingeng/live"
-	"github.com/edwingeng/slog"
 )
 
 const (
@@ -50,11 +50,11 @@ type JobHandler func(job *Job) error
 
 type jobQueue struct {
 	mu sync.Mutex
-	dq Deque
+	dq deque.Deque[*Job]
 }
 
 func newJobQueue() jobQueue {
-	return jobQueue{dq: *NewDeque()}
+	return jobQueue{dq: *deque.NewDeque[*Job]()}
 }
 
 type Tickque struct {
@@ -131,7 +131,7 @@ func (this *Tickque) Tick(maxJobs int, jobHandler JobHandler) int {
 		for i := 0; i < len(this.burst.queues); i++ {
 			jq := &this.burst.queues[i]
 			jq.mu.Lock()
-			empty := jq.dq.Empty()
+			empty := jq.dq.IsEmpty()
 			jq.mu.Unlock()
 			if !empty {
 				this.burst.wg.Add(1)
