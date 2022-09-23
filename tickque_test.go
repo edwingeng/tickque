@@ -46,48 +46,6 @@ func TestTickque_Routine(t *testing.T) {
 	}
 }
 
-func TestWithTickStartNtf(t *testing.T) {
-	var n int
-	handler := func(job *Job) error {
-		n++
-		if n%11 == 1 {
-			if job.Type != TickStart {
-				t.Fatalf("job.Type != TickStart. job.Type: %s", job.Type)
-			}
-		} else {
-			if job.Type == TickStart {
-				t.Fatalf("job.Type == TickStart. job.Type: %s", job.Type)
-			}
-		}
-		return nil
-	}
-	tq := NewTickque("alpha", WithTickStartNtf())
-	for _, v := range []int{0, 3, 9, 10, 11, 19, 100} {
-		n = 0
-		for i := 0; i < v; i++ {
-			tq.AddJob(fmt.Sprintf("alpha-%d-%d", v, i), live.Nil)
-		}
-		var c1 int
-		for tq.NumPendingJobs() > 0 {
-			c3 := tq.NumPendingJobs()
-			processed := tq.Tick(10, handler)
-			if c2 := tq.NumPendingJobs(); v%10 == 0 || c3 >= 10 {
-				if processed != 10 {
-					t.Fatalf("processed != 10. v: %d, numPendingJobs: %d, processed: %d", v, c2, processed)
-				}
-			} else {
-				if processed != v%10 {
-					t.Fatalf("processed != int64(v) %% 10. v: %d, numPendingJobs: %d, processed: %d", v, c2, processed)
-				}
-			}
-			c1++
-		}
-		if c1 != (v+9)/10 {
-			t.Fatal("c1 != (v+9)/10")
-		}
-	}
-}
-
 func TestTickque_Panic(t *testing.T) {
 	var n int
 	handler := func(job *Job) error {

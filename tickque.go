@@ -13,16 +13,8 @@ import (
 	"time"
 )
 
-const (
-	TickStart = "tickque:TickStart"
-)
-
 var (
 	ErrBreak = errors.New("break")
-)
-
-var (
-	jobTickStart = &Job{Type: TickStart}
 )
 
 type burstInfo struct {
@@ -60,7 +52,6 @@ func newJobQueue() jobQueue {
 type Tickque struct {
 	slog.Logger
 	name                 string
-	tickStartNtf         bool
 	slowWarningThreshold time.Duration
 
 	burst struct {
@@ -116,14 +107,8 @@ func (tq *Tickque) invokeJobHandler(jobHandler JobHandler, job *Job) bool {
 }
 
 func (tq *Tickque) Tick(maxJobs int, jobHandler JobHandler) int {
-	startTime := time.Now()
-	if tq.tickStartNtf {
-		if !tq.invokeJobHandler(jobHandler, jobTickStart) {
-			return 0
-		}
-	}
-
 	var total int64
+	startTime := time.Now()
 	n1 := tq.processJobQueue(maxJobs, jobHandler, &tq.jq)
 	atomic.AddInt64(&total, int64(n1))
 
@@ -296,12 +281,6 @@ type Option func(tq *Tickque)
 func WithLogger(log slog.Logger) Option {
 	return func(tq *Tickque) {
 		tq.Logger = log
-	}
-}
-
-func WithTickStartNtf() Option {
-	return func(tq *Tickque) {
-		tq.tickStartNtf = true
 	}
 }
 
