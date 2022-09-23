@@ -38,12 +38,12 @@ type Job struct {
 	burstInfo burstInfo
 }
 
-func (this *Job) TryNumber() int32 {
-	return this.tryNumber
+func (j *Job) TryNumber() int32 {
+	return j.tryNumber
 }
 
-func (this *Job) Bursting() bool {
-	return this.burstInfo.bool
+func (j *Job) Bursting() bool {
+	return j.burstInfo.bool
 }
 
 type JobHandler func(job *Job) error
@@ -98,66 +98,66 @@ func minInt(n1, n2 int) int {
 	}
 }
 
-func (this *Tickque) invokeJobHandler(jobHandler JobHandler, job *Job) bool {
+func (tq *Tickque) invokeJobHandler(jobHandler JobHandler, job *Job) bool {
 	defer func() {
 		if r := recover(); r != nil {
 			errMsg := fmt.Sprintf("<tickque.%s> jobType: %s, panic: %+v\n%s",
-				this.name, job.Type, r, debug.Stack())
-			this.Errorw(errMsg, "jobData", fmt.Sprint(job.Data.Value()))
+				tq.name, job.Type, r, debug.Stack())
+			tq.Errorw(errMsg, "jobData", fmt.Sprint(job.Data.Value()))
 		}
 	}()
 	if err := jobHandler(job); err != nil {
 		if err == ErrBreak {
 			return false
 		}
-		this.Errorf("tickque job failed. jobType: %s, err: %s", job.Type, err)
+		tq.Errorf("tickque job failed. jobType: %s, err: %s", job.Type, err)
 	}
 	return true
 }
 
-func (this *Tickque) Tick(maxJobs int, jobHandler JobHandler) int {
+func (tq *Tickque) Tick(maxJobs int, jobHandler JobHandler) int {
 	startTime := time.Now()
-	if this.tickStartNtf {
-		if !this.invokeJobHandler(jobHandler, jobTickStart) {
+	if tq.tickStartNtf {
+		if !tq.invokeJobHandler(jobHandler, jobTickStart) {
 			return 0
 		}
 	}
 
 	var total int64
-	n1 := this.processJobQueue(maxJobs, jobHandler, &this.jq)
+	n1 := tq.processJobQueue(maxJobs, jobHandler, &tq.jq)
 	atomic.AddInt64(&total, int64(n1))
 
 	if d := maxJobs - n1; d > 0 {
-		for i := 0; i < len(this.burst.queues); i++ {
-			jq := &this.burst.queues[i]
+		for i := 0; i < len(tq.burst.queues); i++ {
+			jq := &tq.burst.queues[i]
 			jq.mu.Lock()
 			empty := jq.dq.IsEmpty()
 			jq.mu.Unlock()
 			if !empty {
-				this.burst.wg.Add(1)
+				tq.burst.wg.Add(1)
 				go func() {
-					n2 := this.processJobQueue(d, jobHandler, jq)
+					n2 := tq.processJobQueue(d, jobHandler, jq)
 					atomic.AddInt64(&total, int64(n2))
-					this.burst.wg.Done()
+					tq.burst.wg.Done()
 				}()
 			}
 		}
-		this.burst.wg.Wait()
+		tq.burst.wg.Wait()
 	}
 
-	if d := time.Since(startTime); d > this.slowWarningThreshold {
-		this.Warnf("<tickque.%s> the tick cost too much time. d: %v", this.name, d)
+	if d := time.Since(startTime); d > tq.slowWarningThreshold {
+		tq.Warnf("<tickque.%s> the tick cost too much time. d: %v", tq.name, d)
 	}
 
 	return int(atomic.LoadInt64(&total))
 }
 
-func (this *Tickque) processJobQueue(maxJobs int, jobHandler JobHandler, jq *jobQueue) (numProcessed int) {
+func (tq *Tickque) processJobQueue(maxJobs int, jobHandler JobHandler, jq *jobQueue) (numProcessed int) {
 	var pending []*Job
 	var pendingIdx int
 	defer func() {
 		if r := recover(); r != nil {
-			this.Errorf("<tickque.%s> panic: %+v\n%s", this.name, r, debug.Stack())
+			tq.Errorf("<tickque.%s> panic: %+v\n%s", tq.name, r, debug.Stack())
 		}
 
 		if pendingIdx < len(pending) {
@@ -168,7 +168,7 @@ func (this *Tickque) processJobQueue(maxJobs int, jobHandler JobHandler, jq *job
 			jq.mu.Unlock()
 		}
 
-		atomic.AddInt64(&this.totalProcessed, int64(numProcessed))
+		atomic.AddInt64(&tq.totalProcessed, int64(numProcessed))
 	}()
 
 	jq.mu.Lock()
@@ -186,7 +186,7 @@ func (this *Tickque) processJobQueue(maxJobs int, jobHandler JobHandler, jq *job
 			job := pending[pendingIdx]
 			pendingIdx++
 			numProcessed++
-			if !this.invokeJobHandler(jobHandler, job) {
+			if !tq.invokeJobHandler(jobHandler, job) {
 				return
 			}
 		}
@@ -195,25 +195,25 @@ func (this *Tickque) processJobQueue(maxJobs int, jobHandler JobHandler, jq *job
 	return
 }
 
-func (this *Tickque) AddJob(jobType string, jobData live.Data) {
+func (tq *Tickque) AddJob(jobType string, jobData live.Data) {
 	j := jobPool.Get().(*Job)
 	j.Type = jobType
 	j.Data = jobData
 	j.tryNumber = 1
 	j.burstInfo = burstInfo{}
 
-	this.jq.mu.Lock()
-	this.jq.dq.Enqueue(j)
-	this.jq.mu.Unlock()
+	tq.jq.mu.Lock()
+	tq.jq.dq.Enqueue(j)
+	tq.jq.mu.Unlock()
 }
 
-func (this *Tickque) AddBurstJob(hint int64, jobType string, jobData live.Data) {
-	if this.burst.numThreads == 0 {
+func (tq *Tickque) AddBurstJob(hint int64, jobType string, jobData live.Data) {
+	if tq.burst.numThreads == 0 {
 		panic("it seems that the WithNumBurstThreads option was forgotten")
 	}
 
-	index := int8(hash64(uint64(hint)) % this.burst.numThreads)
-	jq := &this.burst.queues[index]
+	index := int8(hash64(uint64(hint)) % tq.burst.numThreads)
+	jq := &tq.burst.queues[index]
 
 	j := jobPool.Get().(*Job)
 	j.Type = jobType
@@ -233,26 +233,26 @@ func hash64(x uint64) uint64 {
 	return x ^ (x >> 31)
 }
 
-func (this *Tickque) Postpone(job *Job) {
+func (tq *Tickque) Postpone(job *Job) {
 	job.tryNumber++
 	if !job.burstInfo.bool {
-		this.jq.mu.Lock()
-		this.jq.dq.Enqueue(job)
-		this.jq.mu.Unlock()
+		tq.jq.mu.Lock()
+		tq.jq.dq.Enqueue(job)
+		tq.jq.mu.Unlock()
 	} else {
-		jq := &this.burst.queues[job.burstInfo.lane]
+		jq := &tq.burst.queues[job.burstInfo.lane]
 		jq.mu.Lock()
 		jq.dq.Enqueue(job)
 		jq.mu.Unlock()
 	}
 }
 
-func (this *Tickque) NumPendingJobs() int {
-	this.jq.mu.Lock()
-	n := this.jq.dq.Len()
-	this.jq.mu.Unlock()
-	for i := 0; i < len(this.burst.queues); i++ {
-		jq := &this.burst.queues[i]
+func (tq *Tickque) NumPendingJobs() int {
+	tq.jq.mu.Lock()
+	n := tq.jq.dq.Len()
+	tq.jq.mu.Unlock()
+	for i := 0; i < len(tq.burst.queues); i++ {
+		jq := &tq.burst.queues[i]
 		jq.mu.Lock()
 		n += jq.dq.Len()
 		jq.mu.Unlock()
@@ -260,15 +260,15 @@ func (this *Tickque) NumPendingJobs() int {
 	return n
 }
 
-func (this *Tickque) TotalProcessed() int64 {
-	return atomic.LoadInt64(&this.totalProcessed)
+func (tq *Tickque) TotalProcessed() int64 {
+	return atomic.LoadInt64(&tq.totalProcessed)
 }
 
-func (this *Tickque) Shutdown(ctx context.Context, jobHandler JobHandler) (int, error) {
+func (tq *Tickque) Shutdown(ctx context.Context, jobHandler JobHandler) (int, error) {
 	var total int
 	var round int
 	for {
-		c := this.NumPendingJobs()
+		c := tq.NumPendingJobs()
 		if c == 0 {
 			break
 		}
@@ -285,7 +285,7 @@ func (this *Tickque) Shutdown(ctx context.Context, jobHandler JobHandler) (int, 
 			if c < maxJobs {
 				maxJobs = c
 			}
-			total += this.Tick(maxJobs, jobHandler)
+			total += tq.Tick(maxJobs, jobHandler)
 		}
 	}
 	return total, nil
