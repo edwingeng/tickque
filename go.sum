@@ -4,8 +4,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/edwingeng/deque/v2 v2.1.1 h1:+xjC3TnaeMPLZMi7QQf9jN2K00MZmTwruApqplbL9IY=
 github.com/edwingeng/deque/v2 v2.1.1/go.mod h1:HukI8CQe9KDmZCcURPZRYVYjH79Zy2tIjTF9sN3Bgb0=
-github.com/edwingeng/live v0.0.0-20220913145725-9baeee199a55 h1:fug5u99GPE69Kp96r9h9EysNPi0euGb2862MzCrE6ZQ=
-github.com/edwingeng/live v0.0.0-20220913145725-9baeee199a55/go.mod h1:uVgWnrl1oNJJqGWf8tj6c8tHMBL5bHf9iQD8CdZVLdM=
+github.com/edwingeng/live v0.0.0-20221020163417-c7b8cccd2e34 h1:NaT9ScGmmYPS55+9/mr2I5eeczi3Sd3sx7Hiwe1Il9o=
+github.com/edwingeng/live v0.0.0-20221020163417-c7b8cccd2e34/go.mod h1:uVgWnrl1oNJJqGWf8tj6c8tHMBL5bHf9iQD8CdZVLdM=
 github.com/edwingeng/slog v0.0.0-20220922173917-1a139dfeec55 h1:2M3QjdLQVHV6YIUEWoy4Q947nH3q+MvEXZeOrLy5Frw=
 github.com/edwingeng/slog v0.0.0-20220922173917-1a139dfeec55/go.mod h1:mfngKiTrPWlUpIkQjkVzlumITH8chNhxsAiMklqH4Bo=
 github.com/gogo/protobuf v1.3.2 h1:Ov1cvc58UF3b5XjBnZv7+opcTcQFZebYjWzi34vdm4Q=
