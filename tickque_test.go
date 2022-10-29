@@ -2,9 +2,12 @@ package tickque
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
+	"os"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,30 +16,41 @@ import (
 	"github.com/edwingeng/slog"
 )
 
+//gocyclo:ignore
 func TestTickque_Routine(t *testing.T) {
-	var n int
 	handler := func(job *Job) error {
-		n++
+		if job.Type == "beta" {
+			return errors.New("beta")
+		}
 		return nil
 	}
-	tq := NewTickque("alpha")
-	for _, v := range []int{0, 3, 9, 10, 11, 19, 100} {
-		n = 0
+
+	sc := slog.NewScavenger()
+	tq := NewTickque(sc)
+	if tq.Tick(10, handler) != 0 {
+		t.Fatal(`tq.Tick(10, handler) != 0`)
+	}
+	if sc.Len() != 0 {
+		t.Fatal(`sc.Len() != 0`)
+	}
+
+	for _, v := range []int{1, 3, 9, 10, 11, 19, 100} {
 		for i := 0; i < v; i++ {
 			tq.AddJob(fmt.Sprintf("alpha-%d-%d", v, i), live.Nil)
 		}
 		var c1 int
 		for tq.NumPendingJobs() > 0 {
-			c3 := tq.NumPendingJobs()
+			c2 := tq.NumPendingJobs()
 			processed := tq.Tick(10, handler)
-			if c2 := tq.NumPendingJobs(); v%10 == 0 || c3 >= 10 {
-				if processed != 10 {
-					t.Fatalf("processed != 10. v: %d, numPendingJobs: %d, processed: %d", v, c2, processed)
-				}
+			var expected int
+			if v%10 == 0 || c2 >= 10 {
+				expected = 10
 			} else {
-				if processed != v%10 {
-					t.Fatalf("processed != int64(v) %% 10. v: %d, numPendingJobs: %d, processed: %d", v, c2, processed)
-				}
+				expected = v % 10
+			}
+			if processed != expected {
+				t.Fatalf("processed != expected. v: %d, numPendingJobs: %d, processed: %d",
+					v, tq.NumPendingJobs(), processed)
 			}
 			c1++
 		}
@@ -44,143 +58,95 @@ func TestTickque_Routine(t *testing.T) {
 			t.Fatal("c1 != (v+9)/10")
 		}
 	}
+
+	for _, v := range []int{1, 3, 9, 10, 11, 19, 100} {
+		sc.Reset()
+		for i := 0; i < v; i++ {
+			tq.AddJob("beta", live.Nil)
+		}
+		for tq.NumPendingJobs() > 0 {
+			tq.Tick(10, handler)
+		}
+		if sc.Len() != v {
+			t.Fatal(`sc.Len() != v`)
+		}
+		failed := sc.Filter(func(level, msg string) bool {
+			return strings.Contains(msg, "a tickque job failed")
+		})
+		if failed.Len() != v {
+			t.Fatal(`failed.Len() != v`)
+		}
+	}
 }
 
 func TestTickque_Panic(t *testing.T) {
-	var n int
+	var n1 int
 	handler := func(job *Job) error {
-		if job.Type != fmt.Sprint(n) {
-			t.Fatal("job.Type != fmt.Sprint(n)")
+		if job.Type != fmt.Sprint(n1) {
+			t.Fatal("job.Type != fmt.Sprint(n1)")
 		}
-		n++
-		if n == 2 {
+		n1++
+		if n1 == 2 {
 			panic("beta")
 		}
 		return nil
 	}
-	scav := slog.NewScavenger()
-	tq := NewTickque("alpha", WithLogger(scav))
-	for i := 0; i < 5; i++ {
-		tq.AddJob(fmt.Sprint(i), live.Nil)
-	}
 
-	if processed := tq.Tick(10, handler); processed != 2 {
-		t.Fatal("processed != 2")
-	}
-	if yes := scav.StringExists(", panic:"); !yes {
-		t.Fatal("panic not detected")
-	}
-	if tq.NumPendingJobs() != 3 {
-		t.Fatal("tq.NumPendingJobs() != 3")
-	}
-	if tq.TotalProcessed() != 2 {
-		t.Fatal("tq.TotalProcessed() != 2")
-	}
-
-	numLogs := scav.Len()
-	if processed := tq.Tick(10, handler); processed != 3 {
-		t.Fatal("processed != 3")
-	}
-	if numLogs != scav.Len() {
-		t.Fatal("numLogs != scav.Len()")
-	}
-	if tq.NumPendingJobs() != 0 {
-		t.Fatal("tq.NumPendingJobs() != 0")
-	}
-	if tq.TotalProcessed() != 5 {
-		t.Fatal("tq.TotalProcessed() != 5")
-	}
-}
-
-func TestTickque_Halt(t *testing.T) {
-	var n int
-	handler := func(job *Job) error {
-		n++
-		if n != 2 {
-			return nil
-		} else {
-			return ErrBreak
-		}
-	}
-	tq := NewTickque("alpha")
+	sc := slog.NewScavenger()
+	tq := NewTickque(sc)
 	for i := 0; i < 15; i++ {
 		tq.AddJob(fmt.Sprint(i), live.Nil)
-	}
-
-	if processed := tq.Tick(10, handler); processed != 2 {
-		t.Fatal("processed != 2")
-	}
-	if tq.NumPendingJobs() != 13 {
-		t.Fatal("tq.NumPendingJobs() != 13")
-	}
-	if tq.TotalProcessed() != 2 {
-		t.Fatal("tq.TotalProcessed() != 2")
 	}
 
 	if processed := tq.Tick(10, handler); processed != 10 {
 		t.Fatal("processed != 10")
 	}
-	if tq.NumPendingJobs() != 3 {
-		t.Fatal("tq.NumPendingJobs() != 3")
+	if sc.Len() != 1 {
+		t.Fatal(`sc.Len() != 1`)
 	}
-	if tq.TotalProcessed() != 12 {
-		t.Fatal("tq.TotalProcessed() != 12")
+	if yes := sc.StringExists(", panic:"); !yes {
+		t.Fatal("panic not detected")
+	}
+	if tq.NumPendingJobs() != 5 {
+		t.Fatal("tq.NumPendingJobs() != 5")
+	}
+	if n1 != 10 {
+		t.Fatal("n1 != 10")
 	}
 
-	if processed := tq.Tick(10, handler); processed != 3 {
-		t.Fatal("processed != 3")
+	if processed := tq.Tick(10, handler); processed != 5 {
+		t.Fatal("processed != 5")
+	}
+	if sc.Len() != 1 {
+		t.Fatal(`sc.Len() != 1`)
 	}
 	if tq.NumPendingJobs() != 0 {
 		t.Fatal("tq.NumPendingJobs() != 0")
 	}
-	if tq.TotalProcessed() != 15 {
-		t.Fatal("tq.TotalProcessed() != 15")
+	if n1 != 15 {
+		t.Fatal("n1 != 15")
 	}
+
+	func() {
+		defer func() {
+			_ = recover()
+		}()
+		tq.Tick(0, handler)
+		t.Fatal("Tick should panic")
+	}()
 }
 
-func TestWithSlowWarningThreshold(t *testing.T) {
-	var n int
-	handler := func(job *Job) error {
-		if n++; n == 1 {
-			time.Sleep(time.Millisecond * 30)
-		}
-		return nil
-	}
-
-	scav := slog.NewScavenger()
-	tq := NewTickque("alpha", WithLogger(scav), WithSlowWarningThreshold(time.Millisecond*10))
-	tq.AddJob("1", live.Nil)
-	tq.AddJob("2", live.Nil)
-	tq.AddJob("3", live.Nil)
-
-	if processed := tq.Tick(1, handler); processed != 1 {
-		t.Fatal("processed != 1")
-	}
-	if yes := scav.StringExists("the tick cost too much time"); !yes {
-		t.Fatal("WithSlowWarningThreshold does not work as expected")
-	}
-
-	scav.Reset()
-	if processed := tq.Tick(1, handler); processed != 1 {
-		t.Fatal("processed != 1")
-	}
-	if yes := scav.StringExists("the tick cost too much time"); yes {
-		t.Fatal("WithSlowWarningThreshold does not work as expected")
-	}
-}
-
+//gocyclo:ignore
 func TestTickque_Postpone(t *testing.T) {
-	var n int32
-	tq := NewTickque("alpha")
+	var n1 int
+	tq := NewTickque(nil)
 	handler := func(job *Job) error {
 		switch job.Type {
 		case "0":
-			if n >= 0 {
-				n++
-				if job.TryNumber() != n {
-					t.Fatal("job.TryNumber() != n")
-				}
+			if job.RetryNumber() != int32(n1) {
+				t.Fatal("job.RetryNumber() != int32(n1)")
 			}
+			n1++
 		}
 		tq.Postpone(job)
 		return nil
@@ -193,16 +159,15 @@ func TestTickque_Postpone(t *testing.T) {
 	tq.AddJob("0", live.Nil)
 	for i := 0; i < 10; i++ {
 		tq.Tick(10, handler)
-		if n != int32(i)+1 {
-			t.Fatal("n != i+1")
+		if n1 != i+1 {
+			t.Fatal("n1 != i+1")
 		}
 	}
 
-	n = -1
 	for i := 1; i < 10; i++ {
 		tq.AddJob(fmt.Sprint(i), live.Nil)
 	}
-	for i := 0; i < 50; i++ {
+	for i := 1; i < 50; i++ {
 		if i <= 10 {
 			if tq.Tick(i, handler) != i {
 				t.Fatal("tq.Tick(i, handler) != i")
@@ -215,9 +180,9 @@ func TestTickque_Postpone(t *testing.T) {
 	}
 
 	for i := 0; i < 10; i++ {
-		tq.AddJob(fmt.Sprint(i), live.Nil)
+		tq.AddJob(fmt.Sprint(100+i), live.Nil)
 	}
-	for i := 0; i < 50; i++ {
+	for i := 1; i < 50; i++ {
 		if i <= 20 {
 			if tq.Tick(i, handler) != i {
 				t.Fatal("tq.Tick(i, handler) != i")
@@ -238,8 +203,9 @@ func TestTickque_Burst(t *testing.T) {
 	var tq *Tickque
 	handler := func(job *Job) error {
 		atomic.AddInt64(&counter, 1)
-		if job.burstInfo.bool {
-			atomic.AddInt64(&threadCounters[job.burstInfo.lane], 1)
+		if job.Hint() != 0 {
+			slot := scatter(uint64(job.Hint())) % (tq.burst.nq)
+			atomic.AddInt64(&threadCounters[slot], 1)
 		}
 		n := rand.Intn(100)
 		switch {
@@ -257,11 +223,11 @@ func TestTickque_Burst(t *testing.T) {
 	}
 
 	const total = 100000
-	tq = NewTickque("alpha", WithLogger(slog.DumbLogger{}), WithNumBurstThreads(numThreads))
+	tq = NewTickque(slog.NewDumbLogger(), WithNumBurstThreads(numThreads))
 	for i := 0; i < total; i++ {
 		n := rand.Intn(100)
 		switch {
-		case n < 5:
+		case n < 5 || i == 0:
 			tq.AddJob(fmt.Sprint(i), live.Nil)
 		default:
 			tq.AddBurstJob(int64(i), fmt.Sprint(i), live.Nil)
@@ -271,7 +237,7 @@ func TestTickque_Burst(t *testing.T) {
 	remaining = total
 	var numProcessed int64
 	for tq.NumPendingJobs() > 0 {
-		n := tq.Tick(rand.Intn(300), handler)
+		n := tq.Tick(1+rand.Intn(300), handler)
 		numProcessed += int64(n)
 	}
 
@@ -286,15 +252,49 @@ func TestTickque_Burst(t *testing.T) {
 	}
 
 	t.Logf("thread counters: %v", threadCounters)
+
+	func() {
+		defer func() {
+			_ = recover()
+		}()
+		NewTickque(nil, WithNumBurstThreads(-10))
+		t.Fatal(`WithNumBurstThreads should panic`)
+	}()
+
+	func() {
+		defer func() {
+			_ = recover()
+		}()
+		NewTickque(nil, WithNumBurstThreads(100))
+		t.Fatal(`WithNumBurstThreads should panic`)
+	}()
+
+	func() {
+		defer func() {
+			_ = recover()
+		}()
+		NewTickque(nil).AddBurstJob(1, "beta", live.Nil)
+		t.Fatal(`AddBurstJob should panic`)
+	}()
+
+	func() {
+		defer func() {
+			_ = recover()
+		}()
+		NewTickque(nil, WithNumBurstThreads(1)).AddBurstJob(0, "beta", live.Nil)
+		t.Fatal(`AddBurstJob should panic`)
+	}()
 }
 
+//gocyclo:ignore
 func TestTickque_Shutdown(t *testing.T) {
 	var n1 int
 	handler1 := func(job *Job) error {
 		n1++
 		return nil
 	}
-	tq1 := NewTickque("alpha")
+	logger := slog.NewDumbLogger()
+	tq1 := NewTickque(logger)
 	data := []int{0, 3, 9, 10, 11, 19, 100}
 	for _, v := range data {
 		tq1.AddJob(fmt.Sprintf("alpha-%d", v), live.WrapInt(v))
@@ -315,7 +315,7 @@ func TestTickque_Shutdown(t *testing.T) {
 		}
 		return nil
 	}
-	tq2 := NewTickque("alpha", WithLogger(slog.DumbLogger{}))
+	tq2 := NewTickque(logger)
 	for _, v := range data {
 		tq2.AddJob(fmt.Sprintf("alpha-%d", v), live.WrapInt(v))
 	}
@@ -335,7 +335,7 @@ func TestTickque_Shutdown(t *testing.T) {
 		}
 		return nil
 	}
-	tq3 := NewTickque("alpha", WithLogger(slog.DumbLogger{}))
+	tq3 := NewTickque(logger)
 	for _, v := range data {
 		tq3.AddJob(fmt.Sprintf("alpha-%d", v), live.WrapInt(v))
 	}
@@ -346,6 +346,28 @@ func TestTickque_Shutdown(t *testing.T) {
 	} else if n3 != len(data) {
 		t.Fatal("n3 != len(data)")
 	}
+
+	var n4 int
+	handler4 := func(job *Job) error {
+		n4++
+		if n4 == 2 {
+			time.Sleep(time.Millisecond * 20)
+		}
+		return nil
+	}
+	tq4 := NewTickque(logger)
+	for i := 0; i < 1000; i++ {
+		tq4.AddJob("beta", live.Nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	if processed, err := tq4.Shutdown(ctx, handler4); err == nil {
+		t.Fatal(`err should not be nil`)
+	} else if !os.IsTimeout(err) {
+		t.Fatal(`!os.IsTimeout(err)`)
+	} else if processed != 2 {
+		t.Fatal(`processed != 2`)
+	}
 }
 
 func TestTickque_Recycle(t *testing.T) {
@@ -355,7 +377,7 @@ func TestTickque_Recycle(t *testing.T) {
 		Recycle(job)
 		return nil
 	}
-	tq := NewTickque("alpha", WithNumBurstThreads(8))
+	tq := NewTickque(nil, WithNumBurstThreads(8))
 	for i := 0; i < 100; i++ {
 		tq.AddJob("1", live.Nil)
 		go func() {
@@ -377,5 +399,36 @@ func TestTickque_Recycle(t *testing.T) {
 	sum += tq.Tick(1000, handler)
 	if sum != 10100 {
 		t.Fatal("sum != 10100")
+	}
+}
+
+func TestTickque_Timeout(t *testing.T) {
+	var n1 int
+	handler := func(job *Job) error {
+		n1++
+		if n1 == 2 {
+			time.Sleep(time.Millisecond * 20)
+		}
+		return nil
+	}
+
+	sc := slog.NewScavenger()
+	tq := NewTickque(sc, WithMaxTickTime(time.Millisecond*5))
+	for i := 0; i < 5; i++ {
+		tq.AddJob("alpha", live.Nil)
+	}
+	if tq.Tick(10, handler) != 2 {
+		t.Fatal(`tq.Tick(10, handler) != 2`)
+	}
+	if !sc.StringExists("a tickque tick timed out") {
+		t.Fatal(`!sc.StringExists("a tickque tick timed out")`)
+	}
+
+	sc.Reset()
+	if tq.Tick(10, handler) != 3 {
+		t.Fatal(`tq.Tick(10, handler) != 3`)
+	}
+	if sc.Len() != 0 {
+		t.Fatal(`sc.Len() != 0`)
 	}
 }

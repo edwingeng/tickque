@@ -2,46 +2,21 @@ package tickque
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/edwingeng/deque/v2"
 	"github.com/edwingeng/live"
 	"github.com/edwingeng/slog"
+	"go.uber.org/atomic"
+	"runtime"
 	"runtime/debug"
 	"sync"
-	"sync/atomic"
 	"time"
 )
-
-var (
-	ErrBreak = errors.New("break")
-)
-
-type burstInfo struct {
-	bool
-	lane int8
-}
-
-type Job struct {
-	Type string
-	Data live.Data
-
-	tryNumber int32
-	burstInfo burstInfo
-}
-
-func (j *Job) TryNumber() int32 {
-	return j.tryNumber
-}
-
-func (j *Job) Bursting() bool {
-	return j.burstInfo.bool
-}
 
 type JobHandler func(job *Job) error
 
 type jobQueue struct {
-	mu sync.Mutex
+	sync.Mutex
 	dq deque.Deque[*Job]
 }
 
@@ -51,31 +26,31 @@ func newJobQueue() jobQueue {
 
 type Tickque struct {
 	slog.Logger
-	name                 string
-	slowWarningThreshold time.Duration
+	maxTickTime time.Duration
 
 	burst struct {
-		numThreads uint64
-		queues     []jobQueue
-		wg         sync.WaitGroup
+		nq     uint64
+		queues []jobQueue
+		wg     sync.WaitGroup
 	}
 
-	jq jobQueue
-
-	totalProcessed int64
+	main jobQueue
 }
 
-func NewTickque(name string, opts ...Option) (tq *Tickque) {
+func NewTickque(logger slog.Logger, opts ...Option) (tq *Tickque) {
 	tq = &Tickque{
-		name:                 name,
-		Logger:               slog.NewDevelopmentConfig().MustBuild(),
-		slowWarningThreshold: time.Millisecond * 100,
-		jq:                   newJobQueue(),
+		maxTickTime: time.Millisecond * 50,
+		main:        newJobQueue(),
+	}
+	if logger != nil {
+		tq.Logger = logger
+	} else {
+		tq.Logger = slog.NewDevelopmentConfig().MustBuild()
 	}
 	for _, opt := range opts {
 		opt(tq)
 	}
-	for i := 0; i < int(tq.burst.numThreads); i++ {
+	for i := 0; i < int(tq.burst.nq); i++ {
 		tq.burst.queues = append(tq.burst.queues, newJobQueue())
 	}
 	return
@@ -89,188 +64,192 @@ func minInt(n1, n2 int) int {
 	}
 }
 
-func (tq *Tickque) invokeJobHandler(jobHandler JobHandler, job *Job) bool {
+func (tq *Tickque) invokeJobHandler(jobHandler JobHandler, job *Job) {
 	defer func() {
 		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("<tickque.%s> jobType: %s, panic: %+v\n%s",
-				tq.name, job.Type, r, debug.Stack())
-			tq.Errorw(errMsg, "jobData", fmt.Sprint(job.Data.Value()))
+			str := fmt.Sprintf("<tickque> jobType: %s, panic: %+v\n%s", job.Type, r, debug.Stack())
+			tq.Errorw(str, "jobData", job.Data.Value())
 		}
 	}()
 	if err := jobHandler(job); err != nil {
-		if err == ErrBreak {
-			return false
-		}
-		tq.Errorf("tickque job failed. jobType: %s, err: %s", job.Type, err)
+		tq.Errorw(fmt.Sprintf("a tickque job failed. jobType: %s", job.Type), "err", err)
 	}
-	return true
 }
 
 func (tq *Tickque) Tick(maxJobs int, jobHandler JobHandler) int {
-	var total int64
+	if maxJobs <= 0 {
+		panic("maxJobs must be a positive number")
+	}
+
+	var total atomic.Int64
 	startTime := time.Now()
-	n1 := tq.processJobQueue(maxJobs, jobHandler, &tq.jq)
-	atomic.AddInt64(&total, int64(n1))
+	count := tq.processJobQueue(&tq.main, maxJobs, jobHandler, startTime)
+	total.Add(count)
 
-	if d := maxJobs - n1; d > 0 {
-		for i := 0; i < len(tq.burst.queues); i++ {
-			jq := &tq.burst.queues[i]
-			jq.mu.Lock()
-			empty := jq.dq.IsEmpty()
-			jq.mu.Unlock()
-			if !empty {
-				tq.burst.wg.Add(1)
-				go func() {
-					n2 := tq.processJobQueue(d, jobHandler, jq)
-					atomic.AddInt64(&total, int64(n2))
-					tq.burst.wg.Done()
-				}()
+	if tq.burst.nq > 0 {
+		if d := maxJobs - int(count); d > 0 {
+			for i := 0; i < len(tq.burst.queues); i++ {
+				tq.processBurstQueue(&tq.burst.queues[i], d, jobHandler, startTime, &total)
 			}
+			tq.burst.wg.Wait()
 		}
-		tq.burst.wg.Wait()
 	}
 
-	if d := time.Since(startTime); d > tq.slowWarningThreshold {
-		tq.Warnf("<tickque.%s> the tick cost too much time. d: %v", tq.name, d)
-	}
-
-	return int(atomic.LoadInt64(&total))
+	return int(total.Load())
 }
 
-func (tq *Tickque) processJobQueue(maxJobs int, jobHandler JobHandler, jq *jobQueue) (numProcessed int) {
-	var pending []*Job
-	var pendingIdx int
+func (tq *Tickque) processBurstQueue(jq *jobQueue, maxJobs int, jobHandler JobHandler, startTime time.Time, total *atomic.Int64) {
+	jq.Lock()
+	isEmpty := jq.dq.IsEmpty()
+	jq.Unlock()
+	if isEmpty {
+		return
+	}
+
+	tq.burst.wg.Add(1)
+	go func() {
+		defer tq.burst.wg.Done()
+		count := tq.processJobQueue(jq, maxJobs, jobHandler, startTime)
+		total.Add(count)
+	}()
+}
+
+func (tq *Tickque) processJobQueue(jq *jobQueue, maxJobs int, jobHandler JobHandler, startTime time.Time) int64 {
+	const batchSize = 16
+	var pitch [batchSize]*Job
+	var pending = pitch[:0]
+	var idx int
 	defer func() {
 		if r := recover(); r != nil {
-			tq.Errorf("<tickque.%s> panic: %+v\n%s", tq.name, r, debug.Stack())
+			tq.Errorf("<tickque> panic: %+v\n%s", r, debug.Stack())
 		}
 
-		if pendingIdx < len(pending) {
-			jq.mu.Lock()
-			for i := len(pending) - 1; i >= pendingIdx; i-- {
+		if idx < len(pending) {
+			jq.Lock()
+			for i := len(pending) - 1; i >= idx; i-- {
 				jq.dq.PushFront(pending[i])
 			}
-			jq.mu.Unlock()
+			jq.Unlock()
 		}
-
-		atomic.AddInt64(&tq.totalProcessed, int64(numProcessed))
 	}()
 
-	jq.mu.Lock()
-	remainingJobs := minInt(jq.dq.Len(), maxJobs)
-	jq.mu.Unlock()
+	jq.Lock()
+	remaining := minInt(jq.dq.Len(), maxJobs)
+	jq.Unlock()
 
-	for remainingJobs > 0 {
-		const batchSize = 16
-		n1 := minInt(remainingJobs, batchSize)
-		jq.mu.Lock()
-		pending = jq.dq.DequeueMany(n1)
-		jq.mu.Unlock()
+	var count int64
+	for remaining > 0 {
+		n1 := minInt(remaining, batchSize)
+		jq.Lock()
+		pending = jq.dq.DequeueManyWithBuffer(n1, pending)
+		jq.Unlock()
 		n2 := len(pending)
-		for pendingIdx = 0; pendingIdx < n2; {
-			job := pending[pendingIdx]
-			pendingIdx++
-			numProcessed++
-			if !tq.invokeJobHandler(jobHandler, job) {
-				return
+		var job *Job
+		for idx = 0; idx < n2; {
+			job = pending[idx]
+			idx++
+			count++
+			tq.invokeJobHandler(jobHandler, job)
+			if dt := time.Since(startTime); dt > tq.maxTickTime {
+				tq.Warnf("a tickque tick timed out. elapsed: %v", dt)
+				return count
 			}
 		}
-		remainingJobs -= n2
+		remaining -= n2
 	}
-	return
+
+	return count
 }
 
 func (tq *Tickque) AddJob(jobType string, jobData live.Data) {
-	j := jobPool.Get().(*Job)
-	j.Type = jobType
-	j.Data = jobData
-	j.tryNumber = 1
-	j.burstInfo = burstInfo{}
+	job := jobPool.Get().(*Job)
+	job.Type = jobType
+	job.Data = jobData
+	job.hint = 0
+	job.retryNumber = 0
 
-	tq.jq.mu.Lock()
-	tq.jq.dq.Enqueue(j)
-	tq.jq.mu.Unlock()
+	tq.main.Lock()
+	tq.main.dq.Enqueue(job)
+	tq.main.Unlock()
 }
 
 func (tq *Tickque) AddBurstJob(hint int64, jobType string, jobData live.Data) {
-	if tq.burst.numThreads == 0 {
-		panic("it seems that the WithNumBurstThreads option was forgotten")
+	if tq.burst.nq == 0 {
+		panic("WithNumBurstThreads was absent when creating the Tickque instance")
+	}
+	if hint == 0 {
+		panic("hint cannot be zero")
 	}
 
-	index := int8(hash64(uint64(hint)) % tq.burst.numThreads)
-	jq := &tq.burst.queues[index]
+	job := jobPool.Get().(*Job)
+	job.Type = jobType
+	job.Data = jobData
+	job.hint = hint
+	job.retryNumber = 0
 
-	j := jobPool.Get().(*Job)
-	j.Type = jobType
-	j.Data = jobData
-	j.tryNumber = 1
-	j.burstInfo.bool = true
-	j.burstInfo.lane = index
-
-	jq.mu.Lock()
-	jq.dq.Enqueue(j)
-	jq.mu.Unlock()
+	slot := scatter(uint64(hint)) % (tq.burst.nq)
+	jq := &tq.burst.queues[slot]
+	jq.Lock()
+	jq.dq.Enqueue(job)
+	jq.Unlock()
 }
 
-func hash64(x uint64) uint64 {
-	x = (x ^ (x >> 30)) * uint64(0xbf58476d1ce4e5b9)
-	x = (x ^ (x >> 27)) * uint64(0x94d049bb133111eb)
-	return x ^ (x >> 31)
+func scatter(v uint64) uint64 {
+	v = (v ^ (v >> 30)) * uint64(0xbf58476d1ce4e5b9)
+	v = (v ^ (v >> 27)) * uint64(0x94d049bb133111eb)
+	return v ^ (v >> 31)
 }
 
 func (tq *Tickque) Postpone(job *Job) {
-	job.tryNumber++
-	if !job.burstInfo.bool {
-		tq.jq.mu.Lock()
-		tq.jq.dq.Enqueue(job)
-		tq.jq.mu.Unlock()
+	job.retryNumber++
+	if job.hint == 0 {
+		tq.main.Lock()
+		tq.main.dq.Enqueue(job)
+		tq.main.Unlock()
 	} else {
-		jq := &tq.burst.queues[job.burstInfo.lane]
-		jq.mu.Lock()
+		slot := scatter(uint64(job.hint)) % (tq.burst.nq)
+		jq := &tq.burst.queues[slot]
+		jq.Lock()
 		jq.dq.Enqueue(job)
-		jq.mu.Unlock()
+		jq.Unlock()
 	}
 }
 
 func (tq *Tickque) NumPendingJobs() int {
-	tq.jq.mu.Lock()
-	n := tq.jq.dq.Len()
-	tq.jq.mu.Unlock()
+	tq.main.Lock()
+	n := tq.main.dq.Len()
+	tq.main.Unlock()
 	for i := 0; i < len(tq.burst.queues); i++ {
 		jq := &tq.burst.queues[i]
-		jq.mu.Lock()
+		jq.Lock()
 		n += jq.dq.Len()
-		jq.mu.Unlock()
+		jq.Unlock()
 	}
 	return n
 }
 
-func (tq *Tickque) TotalProcessed() int64 {
-	return atomic.LoadInt64(&tq.totalProcessed)
-}
-
 func (tq *Tickque) Shutdown(ctx context.Context, jobHandler JobHandler) (int, error) {
+	deadline, ok := ctx.Deadline()
+	if ok {
+		tmp := tq.maxTickTime
+		tq.maxTickTime = deadline.Sub(time.Now())
+		defer func() {
+			tq.maxTickTime = tmp
+		}()
+	}
+
 	var total int
-	var round int
-	for {
+	for i := 0; ; i++ {
+		runtime.Gosched()
 		c := tq.NumPendingJobs()
 		if c == 0 {
 			break
-		}
-		round++
-		if round > 1 {
-			const nap = time.Millisecond * 20
-			time.Sleep(nap)
 		}
 		select {
 		case <-ctx.Done():
 			return total, ctx.Err()
 		default:
-			maxJobs := 1000
-			if c < maxJobs {
-				maxJobs = c
-			}
-			total += tq.Tick(maxJobs, jobHandler)
+			total += tq.Tick(100, jobHandler)
 		}
 	}
 	return total, nil
@@ -278,15 +257,9 @@ func (tq *Tickque) Shutdown(ctx context.Context, jobHandler JobHandler) (int, er
 
 type Option func(tq *Tickque)
 
-func WithLogger(log slog.Logger) Option {
+func WithMaxTickTime(d time.Duration) Option {
 	return func(tq *Tickque) {
-		tq.Logger = log
-	}
-}
-
-func WithSlowWarningThreshold(d time.Duration) Option {
-	return func(tq *Tickque) {
-		tq.slowWarningThreshold = d
+		tq.maxTickTime = d
 	}
 }
 
@@ -295,6 +268,6 @@ func WithNumBurstThreads(n int) Option {
 		panic("invalid number of burst threads")
 	}
 	return func(tq *Tickque) {
-		tq.burst.numThreads = uint64(n)
+		tq.burst.nq = uint64(n)
 	}
 }
